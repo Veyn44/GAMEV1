@@ -221,19 +221,28 @@ function findRiverPath(startX, startY, width, height, elevation, random) {
     return path;
 }
 
-// A lake is a half-ellipse whose straight edge sits against the higher
-// elevation cliff and whose rounded body spreads into the lower terrain.
-function makeCliffLake(x, y, lowerLevel, direction, width, height, elevation, lakes, terminal = false) {
-    const d = DIRECTIONS[direction];
-    // Give the shoreline enough room to meet nearby cliffs instead of
-    // ending as a small, isolated half-ellipse. Higher terrain clips the
-    // shape naturally, producing a cove pressed against the cliff.
-    const across = terminal ? 30 : lowerLevel === 2 ? 10 : 7;
-    const depth = terminal ? 14 : lowerLevel === 2 ? 6 : 5;
-    const halfAcross = across / 2;
-    const halfDepth = depth / 2;
+// Lakes grow as full 360-degree pools around the waterfall impact.
+// Higher elevation naturally clips the circle, so cliffs form the shore
+// wherever the expanding water meets them. Exposed shores are irregular.
+function shorelineNoise(x, y) {
+    const hash = (n) => {
+        const value = Math.sin(n * 127.1 + 311.7) * 43758.5453123;
+        return (value - Math.floor(value)) * 2 - 1;
+    };
 
-    const searchRadius = across + depth + 2;
+    return (
+        hash(x * 1.0 + y * 57.0) * 0.48 +
+        hash(x * 3.0 + y * 131.0) * 0.24 +
+        hash(x * 11.0 + y * 197.0) * 0.12
+    );
+}
+
+function makeCliffLake(x, y, lowerLevel, direction, width, height, elevation, lakes, terminal = false) {
+    // Keep the previous approximate footprint, but use a circular radius
+    // instead of a half-ellipse. Terminal pools are deliberately broader.
+    const radius = terminal ? 10 : lowerLevel === 2 ? 6 : 5;
+    const roughness = terminal ? 1.15 : 0.8;
+    const searchRadius = Math.ceil(radius + roughness + 1);
     const minX = Math.max(0, x - searchRadius);
     const maxX = Math.min(width - 1, x + searchRadius);
     const minY = Math.max(0, y - searchRadius);
@@ -244,22 +253,12 @@ function makeCliffLake(x, y, lowerLevel, direction, width, height, elevation, la
         for (let lx = minX; lx <= maxX; lx++) {
             const dx = lx - x;
             const dy = ly - y;
-            const along = dx * d.x + dy * d.y;
-            const sideways = Math.abs(dx * d.y - dy * d.x);
+            const distance = Math.sqrt(dx * dx + dy * dy);
+            const localRadius = radius + shorelineNoise(lx, ly) * roughness;
 
-            // The broad, flat side is at the cliff. The lake bulges outward
-            // in the direction of the falling water.
-            const normalizedAlong = along / depth;
-            const normalizedSideways = sideways / halfAcross;
-            // Multi-scale deterministic shoreline noise: retain the same
-            // lake footprint, but break up the perfectly clean pixel edge.
-            const shoreline = 1
-                + 0.10 * Math.sin(lx * 1.71 + ly * 0.93)
-                + 0.045 * Math.sin(lx * 3.17 - ly * 2.41)
-                + 0.025 * Math.cos(lx * 5.13 + ly * 4.37);
-
-            if (along < 0 || normalizedAlong * normalizedAlong +
-                normalizedSideways * normalizedSideways > shoreline) continue;
+            // Irregular 360-degree shore. Higher terrain is not water:
+            // it interrupts the circle and creates a natural cliff-backed edge.
+            if (distance > localRadius) continue;
 
             const tile = indexOf(lx, ly, width);
             if (elevation[tile] > lowerLevel) continue;
