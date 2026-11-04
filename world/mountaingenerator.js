@@ -1,4 +1,3 @@
-
 function randomInt(random, min, max) {
     return Math.floor(random() * (max - min + 1)) + min;
 }
@@ -25,7 +24,6 @@ function smoothCircular(values) {
 
 // Creates an irregular elliptical peak.
 // Randomness changes the boundary, never the interior.
-
 function createPeakRadii(width, height, random, pointCount) {
     const radiusX = width / 2;
     const radiusY = height / 2;
@@ -65,7 +63,6 @@ function createPeakRadii(width, height, random, pointCount) {
 
     return radii;
 }
-
 
 // Expands the existing contour by a random distance.
 // Each contour point gets its own expansion value.
@@ -241,14 +238,15 @@ export function generateMountains({
 }) {
     const mountains = [];
 
-    // Reserve enough space for the largest possible mountain.
+    // The peak can be twice as tall as it is wide.
+    // Reserve enough space for that maximum dimension and all outer bands.
     const maximumExpansion =
         bands.z3.max +
         bands.z2.max +
         bands.z1.max;
 
     const margin = Math.ceil(
-        peakMax / 2 + maximumExpansion + 2
+        peakMax + maximumExpansion + 2
     );
 
     let attempts = 0;
@@ -261,13 +259,13 @@ export function generateMountains({
     ) {
         attempts++;
 
-    let peakWidth = randomInt(random, 4, 10);
-    let peakHeight = randomInt(random, 10, 20);
+        let peakWidth = randomInt(random, peakMin, peakMax);
+        let peakHeight = randomInt(random, peakMin * 2, peakMax * 2);
 
         // Randomly rotate the mountain's orientation.
-            if (random() < 0.5) {
-         [peakWidth, peakHeight] = [peakHeight, peakWidth];
-}
+        if (random() < 0.5) {
+            [peakWidth, peakHeight] = [peakHeight, peakWidth];
+        }
 
         const x = randomInt(
             random,
