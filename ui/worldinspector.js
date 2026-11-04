@@ -1,10 +1,9 @@
-
 const COLORS = [
-    "#78945d", // Z0 - lowland
-    "#b4a36c", // Z1 - foothills
-    "#858b91", // Z2 - mountain slopes
-    "#e4e8e8", // Z3 - upper terrain
-    "#ffffff"  // Z4 - peak
+    "#78945d", // Z0 - zelená nížina
+    "#b49a6a", // Z1 - vyprahlá tráva
+    "#858b91", // Z2 - šedá horská půda
+    "#e8e8e8", // Z3 - bílý vysokohorský terén
+    "#17191d"  // Z4 - černý horský vrchol
 ];
 
 export function openWorldInspector(world) {
@@ -295,7 +294,7 @@ export function openWorldInspector(world) {
     }
 
     function moveCamera(deltaTime) {
-        const speed = keys.has("shift") ? 90 : 35;
+        const speed = keys.has("shift") ? 1800 : 700;
         const distance = speed * deltaTime / zoom;
 
         if (keys.has("w")) cameraY -= distance;
