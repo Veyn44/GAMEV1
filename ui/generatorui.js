@@ -1,6 +1,11 @@
 
+import { generateWorld } from "../world/worldgenerator.js";
+import { renderMap } from "./maprenderer.js";
+
 export function initializeGenerator(config) {
     const container = document.getElementById("generatorControls");
+    const mapPreview = document.getElementById("mapPreview");
+    const mapInfo = document.getElementById("mapInfo");
 
     const settings = [
         {
@@ -11,7 +16,7 @@ export function initializeGenerator(config) {
             max: 30
         },
         {
-            key: "peakSize",
+            key: "peakMax",
             label: "Maximum peak size",
             value: config.mountains.peakSize.max,
             min: 2,
@@ -51,6 +56,7 @@ export function initializeGenerator(config) {
                 ${setting.label}
                 <span class="control-value">${setting.value}</span>
             </label>
+
             <input
                 type="range"
                 min="${setting.min}"
@@ -71,14 +77,40 @@ export function initializeGenerator(config) {
         container.appendChild(control);
     });
 
-    document.getElementById("generateButton").addEventListener("click", () => {
+    function getSettings() {
         const values = {};
 
         settings.forEach(setting => {
-            values[setting.key] = setting.currentValue ?? setting.value;
+            values[setting.key] =
+                setting.currentValue ?? setting.value;
         });
 
-        console.log("Generation settings:", values);
-        alert("Settings ready. World generation will be connected next.");
-    });
+        return values;
+    }
+
+    function generate() {
+        const values = getSettings();
+
+        const world = generateWorld(config, {
+            mountainCount: values.mountainCount,
+            peakMax: values.peakMax,
+            minimumDistance: values.minimumDistance
+        });
+
+        renderMap(world, mapPreview);
+
+        mapInfo.textContent =
+            `${world.width} × ${world.height} | ` +
+            `${world.width * world.height} tiles | ` +
+            `${world.mountains.length} mountains | ` +
+            `Seed: ${world.seed}`;
+
+        console.log("Generated world:", world);
+    }
+
+    document.getElementById("generateButton")
+        .addEventListener("click", generate);
+
+    // Generate the first map automatically.
+    generate();
 }
