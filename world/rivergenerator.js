@@ -99,12 +99,11 @@ class MinHeap {
 // is mandatory. Reverse movement is never allowed.
 function findElevationSegment(startTile, level, targetLevel, incomingDirection, width, height, elevation, random) {
     const runLengths = 8;
-    const stateCount = width * height * 4 * runLengths;
-    const parents = new Int32Array(stateCount);
-    parents.fill(-2);
-    const queue = new Int32Array(stateCount);
+    // Sparse state storage avoids allocating several large full-map arrays
+    // for every mountain and every elevation band.
+    const parents = new Map();
+    const queue = [];
     let read = 0;
-    let write = 0;
 
     const encode = (tile, direction, run) =>
         (tile * 4 + direction) * runLengths + run;
@@ -121,14 +120,14 @@ function findElevationSegment(startTile, level, targetLevel, incomingDirection, 
         if (incomingDirection !== null &&
             direction === (incomingDirection + 2) % 4) continue;
         const state = encode(startTile, direction, 0);
-        if (parents[state] !== -2) continue;
-        parents[state] = -1;
-        queue[write++] = state;
+        if (parents.has(state)) continue;
+        parents.set(state, -1);
+        queue.push(state);
     }
 
     let targetState = -1;
 
-    while (read < write) {
+    while (read < queue.length) {
         const state = queue[read++];
         const run = state % runLengths;
         const packed = Math.floor(state / runLengths);
@@ -158,23 +157,23 @@ function findElevationSegment(startTile, level, targetLevel, incomingDirection, 
 
             const nextRun = nextDirection === direction ? Math.min(7, run + 1) : 1;
             const nextState = encode(nextTile, nextDirection, nextRun);
-            if (parents[nextState] !== -2) continue;
+            if (parents.has(nextState)) continue;
 
-            parents[nextState] = state;
+            parents.set(nextState, state);
             if (nextLevel === targetLevel) {
                 targetState = nextState;
-                read = write;
+                read = queue.length;
                 break;
             }
 
-            queue[write++] = nextState;
+            queue.push(nextState);
         }
     }
 
     if (targetState < 0) return null;
 
     const reversed = [];
-    for (let state = targetState; state !== -1; state = parents[state]) {
+    for (let state = targetState; state !== -1; state = parents.get(state)) {
         reversed.push(Math.floor(state / runLengths / 4));
     }
     reversed.reverse();
