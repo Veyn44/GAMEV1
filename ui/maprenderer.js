@@ -1,9 +1,10 @@
 
 const elevationColors = [
     "#78945d", // Z0 - lowland
-    "#b4a36c", // Z1 - elevated land
+    "#b4a36c", // Z1 - foothills
     "#858b91", // Z2 - mountain slopes
-    "#e4e8e8"  // Z3 - mountain peaks
+    "#e4e8e8", // Z3 - playable upper terrain
+    "#ffffff"  // Z4 - peak
 ];
 
 export function renderMap(world, container) {
