@@ -1,4 +1,3 @@
-
 import { generateWorld } from "../world/worldgenerator.js";
 import { renderMap } from "./maprenderer.js";
 import { openWorldInspector } from "./worldinspector.js";
@@ -18,6 +17,13 @@ export function initializeGenerator(config) {
             max: 30
         },
         {
+            key: "peakMin",
+            label: "Minimum peak size",
+            value: config.mountains.peakSize.min,
+            min: 4,
+            max: 10
+        },
+        {
             key: "peakMax",
             label: "Maximum peak size",
             value: config.mountains.peakSize.max,
@@ -30,20 +36,6 @@ export function initializeGenerator(config) {
             value: config.mountains.minimumDistance,
             min: 0,
             max: 100
-        },
-        {
-            key: "desertChance",
-            label: "Desert percentage",
-            value: config.biomes.z0.desertChance * 100,
-            min: 0,
-            max: 100
-        },
-        {
-            key: "riverLength",
-            label: "River length before lake",
-            value: config.rivers.minimumLengthOnElevation,
-            min: 3,
-            max: 20
         }
     ];
 
@@ -89,6 +81,8 @@ export function initializeGenerator(config) {
 
     seedInput.value = createRandomSeed();
 
+    const settingControls = new Map();
+
     settings.forEach(setting => {
         const control = document.createElement("div");
         control.className = "control";
@@ -111,9 +105,30 @@ export function initializeGenerator(config) {
         const slider = control.querySelector("input");
         const output = control.querySelector(".control-value");
 
+        settingControls.set(setting.key, { slider, output });
+
         slider.addEventListener("input", () => {
-            output.textContent = slider.value;
             setting.currentValue = Number(slider.value);
+            output.textContent = slider.value;
+
+            // Keep the minimum and maximum peak sizes in a valid order.
+            if (setting.key === "peakMin" || setting.key === "peakMax") {
+                const otherKey = setting.key === "peakMin" ? "peakMax" : "peakMin";
+                const otherSetting = settings.find(item => item.key === otherKey);
+                const otherControl = settingControls.get(otherKey);
+                const otherValue = otherSetting.currentValue ?? otherSetting.value;
+
+                const crossed =
+                    setting.key === "peakMin"
+                        ? setting.currentValue > otherValue
+                        : setting.currentValue < otherValue;
+
+                if (crossed) {
+                    otherSetting.currentValue = setting.currentValue;
+                    otherControl.slider.value = setting.currentValue;
+                    otherControl.output.textContent = setting.currentValue;
+                }
+            }
         });
 
         container.appendChild(control);
@@ -168,6 +183,7 @@ export function initializeGenerator(config) {
 
         currentWorld = generateWorld(config, {
             mountainCount: values.mountainCount,
+            peakMin: values.peakMin,
             peakMax: values.peakMax,
             minimumDistance: values.minimumDistance,
             seed: seed
@@ -186,11 +202,11 @@ export function initializeGenerator(config) {
         console.log("Generated world:", currentWorld);
     }
 
-  // Every Generate Map click creates a new random world.
-generateButton.addEventListener("click", () => {
-    seedInput.value = createRandomSeed();
-    generate();
-});
+    // Every Generate Map click creates a new random world.
+    generateButton.addEventListener("click", () => {
+        seedInput.value = createRandomSeed();
+        generate();
+    });
 
     // Randomize button creates a new seed and generates immediately.
     randomSeedButton.addEventListener("click", () => {
