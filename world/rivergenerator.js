@@ -7,26 +7,30 @@ const DIRECTIONS = [
 
 const indexOf = (x, y, width) => y * width + x;
 
-function chooseTurn(random) {
-    const roll = random();
-    return roll < 0.6 ? 0 : roll < 0.8 ? -1 : 1;
-}
-
 function getStart(elevation, width, height, mountain, random) {
     const candidates = [];
-    for (let y = Math.max(1, Math.floor(mountain.y - mountain.peakHeight / 2 - 2));
-         y <= Math.min(height - 2, Math.ceil(mountain.y + mountain.peakHeight / 2 + 2)); y++) {
-        for (let x = Math.max(1, Math.floor(mountain.x - mountain.peakWidth / 2 - 2));
-             x <= Math.min(width - 2, Math.ceil(mountain.x + mountain.peakWidth / 2 + 2)); x++) {
+
+    for (
+        let y = Math.max(1, Math.floor(mountain.y - mountain.peakHeight / 2 - 2));
+        y <= Math.min(height - 2, Math.ceil(mountain.y + mountain.peakHeight / 2 + 2));
+        y++
+    ) {
+        for (
+            let x = Math.max(1, Math.floor(mountain.x - mountain.peakWidth / 2 - 2));
+            x <= Math.min(width - 2, Math.ceil(mountain.x + mountain.peakWidth / 2 + 2));
+            x++
+        ) {
             const i = indexOf(x, y, width);
             if (elevation[i] !== 3) continue;
-            let touchesPeak = false;
-            for (const d of DIRECTIONS) {
-                if (elevation[indexOf(x + d.x, y + d.y, width)] === 4) touchesPeak = true;
-            }
+
+            const touchesPeak = DIRECTIONS.some(d =>
+                elevation[indexOf(x + d.x, y + d.y, width)] === 4
+            );
+
             if (touchesPeak) candidates.push({ x, y });
         }
     }
+
     if (!candidates.length) return null;
     return candidates[Math.floor(random() * candidates.length)];
 }
@@ -36,100 +40,205 @@ function nearestEdgeDirection(x, y, width, height) {
     return distances.indexOf(Math.min(...distances));
 }
 
+// Small binary min-heap used by the direction-aware Dijkstra search.
+class MinHeap {
+    constructor() {
+        this.items = [];
+    }
 
-function findPathToZ0(startX, startY, width, height, elevation) {
-    const start = indexOf(startX, startY, width);
-    const parent = new Int32Array(width * height);
-    parent.fill(-2);
-    parent[start] = -1;
+    push(item) {
+        const items = this.items;
+        items.push(item);
+        let index = items.length - 1;
 
-    const queue = [start];
-    let target = -1;
+        while (index > 0) {
+            const parent = Math.floor((index - 1) / 2);
+            if (items[parent].cost <= item.cost) break;
+            items[index] = items[parent];
+            index = parent;
+        }
 
-    for (let head = 0; head < queue.length; head++) {
-        const current = queue[head];
-        if (elevation[current] === 0) {
-            target = current;
+        items[index] = item;
+    }
+
+    pop() {
+        const items = this.items;
+        if (!items.length) return null;
+
+        const first = items[0];
+        const last = items.pop();
+        if (items.length) {
+            let index = 0;
+
+            while (true) {
+                const left = index * 2 + 1;
+                const right = left + 1;
+                if (left >= items.length) break;
+
+                let child = left;
+                if (right < items.length && items[right].cost < items[left].cost) {
+                    child = right;
+                }
+
+                if (items[child].cost >= last.cost) break;
+                items[index] = items[child];
+                index = child;
+            }
+
+            items[index] = last;
+        }
+
+        return first;
+    }
+
+    get length() {
+        return this.items.length;
+    }
+}
+
+// Find a downhill route while penalizing sharp turns. This is a simplified
+// hydrology-inspired least-cost path: elevation may stay level or decrease,
+// while directional inertia favors longer, smoother river segments.
+function findRiverPath(startX, startY, initialDirection, width, height, elevation, random) {
+    const tileCount = width * height;
+    const stateCount = tileCount * 4;
+    const distances = new Float64Array(stateCount);
+    distances.fill(Infinity);
+
+    const parents = new Int32Array(stateCount);
+    parents.fill(-1);
+
+    const startTile = indexOf(startX, startY, width);
+    const startState = startTile * 4 + initialDirection;
+    distances[startState] = 0;
+
+    const heap = new MinHeap();
+    heap.push({ state: startState, cost: 0 });
+
+    let targetState = -1;
+    const turnPenalty = 2.4;
+
+    while (heap.length) {
+        const current = heap.pop();
+        if (current.cost !== distances[current.state]) continue;
+
+        const tile = Math.floor(current.state / 4);
+        const heading = current.state % 4;
+        const level = elevation[tile];
+
+        if (level === 0) {
+            targetState = current.state;
             break;
         }
 
-        const x = current % width;
-        const y = Math.floor(current / width);
+        const x = tile % width;
+        const y = Math.floor(tile / width);
 
-        for (const d of DIRECTIONS) {
+        for (let direction = 0; direction < 4; direction++) {
+            const d = DIRECTIONS[direction];
             const nx = x + d.x;
             const ny = y + d.y;
+
             if (nx < 0 || ny < 0 || nx >= width || ny >= height) continue;
 
-            const next = indexOf(nx, ny, width);
-            if (parent[next] !== -2 || elevation[next] > 1 || elevation[next] === 4) continue;
+            const nextTile = indexOf(nx, ny, width);
+            const nextLevel = elevation[nextTile];
 
-            parent[next] = current;
-            queue.push(next);
+            // Water never flows uphill or through the Z4 peak.
+            if (nextLevel > level || nextLevel === 4) continue;
+
+            const nextState = nextTile * 4 + direction;
+            const turnDistance = Math.min(
+                (direction - heading + 4) % 4,
+                (heading - direction + 4) % 4
+            );
+
+            // A half-turn is strongly discouraged; a 90-degree bend is
+            // allowed, but costs more than continuing in the same direction.
+            const bendCost = turnDistance === 0 ? 0 : turnDistance === 1
+                ? turnPenalty
+                : turnPenalty * 2.5;
+            const downhillBonus = nextLevel < level ? 0.12 : 0;
+            const stepCost = 1 + bendCost - downhillBonus + random() * 0.08;
+            const nextCost = current.cost + stepCost;
+
+            if (nextCost >= distances[nextState]) continue;
+
+            distances[nextState] = nextCost;
+            parents[nextState] = current.state;
+            heap.push({ state: nextState, cost: nextCost });
         }
     }
 
-    if (target < 0) return [];
+    if (targetState < 0) return [];
 
-    const path = [];
-    for (let current = target; current !== start; current = parent[current]) {
-        path.push(current);
+    const reversed = [];
+    for (let state = targetState; state !== -1; state = parents[state]) {
+        reversed.push(Math.floor(state / 4));
     }
-    path.reverse();
-    return path;
+    reversed.reverse();
+    return reversed;
 }
 
-function makeTerminalLake(x, y, direction, width, height, lakes) {
+// A lake is a half-ellipse whose straight edge sits against the higher
+// elevation cliff and whose rounded body spreads into the lower terrain.
+function makeCliffLake(x, y, lowerLevel, direction, width, height, elevation, lakes, terminal = false) {
     const d = DIRECTIONS[direction];
-    const horizontal = direction === 1 || direction === 3;
-    const lakeWidth = horizontal ? 20 : 10;
-    const lakeHeight = horizontal ? 10 : 20;
+    const across = terminal ? 20 : lowerLevel === 2 ? 6 : 3;
+    const depth = terminal ? 10 : lowerLevel === 2 ? 3 : 3;
+    const halfAcross = across / 2;
+    const halfDepth = depth / 2;
 
-    // Place the upstream edge close to the waterfall so the river visibly
-    // enters the lake instead of ending in the middle of it.
-    const centerX = x + d.x * 9;
-    const centerY = y + d.y * 9;
-    const startX = Math.max(0, Math.min(width - lakeWidth, Math.round(centerX - lakeWidth / 2)));
-    const startY = Math.max(0, Math.min(height - lakeHeight, Math.round(centerY - lakeHeight / 2)));
+    const minX = Math.max(0, x - across - depth);
+    const maxX = Math.min(width - 1, x + across + depth);
+    const minY = Math.max(0, y - across - depth);
+    const maxY = Math.min(height - 1, y + across + depth);
     const tiles = [];
 
-    for (let ly = startY; ly < startY + lakeHeight; ly++) {
-        for (let lx = startX; lx < startX + lakeWidth; lx++) {
-            const nx = (lx - (startX + (lakeWidth - 1) / 2)) / (lakeWidth / 2);
-            const ny = (ly - (startY + (lakeHeight - 1) / 2)) / (lakeHeight / 2);
-            // Rounded, slightly irregular shoreline rather than a hard rectangle.
-            const edge = 1 + 0.06 * Math.sin(lx * 1.7 + ly * 0.9);
-            if (nx * nx + ny * ny <= edge) tiles.push(indexOf(lx, ly, width));
+    for (let ly = minY; ly <= maxY; ly++) {
+        for (let lx = minX; lx <= maxX; lx++) {
+            const dx = lx - x;
+            const dy = ly - y;
+            const along = dx * d.x + dy * d.y;
+            const sideways = Math.abs(dx * d.y - dy * d.x);
+
+            // The broad, flat side is at the cliff. The lake bulges outward
+            // in the direction of the falling water.
+            const normalizedAlong = along / depth;
+            const normalizedSideways = sideways / halfAcross;
+            const shoreline = 1 + 0.045 * Math.sin(lx * 1.71 + ly * 0.93);
+
+            if (along < 0 || normalizedAlong * normalizedAlong +
+                normalizedSideways * normalizedSideways > shoreline) continue;
+
+            const tile = indexOf(lx, ly, width);
+            if (elevation[tile] > lowerLevel) continue;
+            tiles.push(tile);
         }
+    }
+
+    if (!tiles.length) return null;
+
+    let lakeMinX = width, lakeMinY = height, lakeMaxX = 0, lakeMaxY = 0;
+    for (const tile of tiles) {
+        const tx = tile % width;
+        const ty = Math.floor(tile / width);
+        lakeMinX = Math.min(lakeMinX, tx);
+        lakeMinY = Math.min(lakeMinY, ty);
+        lakeMaxX = Math.max(lakeMaxX, tx);
+        lakeMaxY = Math.max(lakeMaxY, ty);
     }
 
     const lake = {
-        x: startX,
-        y: startY,
-        width: lakeWidth,
-        height: lakeHeight,
-        level: 0,
-        type: "terminal",
+        x: lakeMinX,
+        y: lakeMinY,
+        width: lakeMaxX - lakeMinX + 1,
+        height: lakeMaxY - lakeMinY + 1,
+        level: lowerLevel,
+        type: terminal ? "terminal" : "cliff",
         tiles
     };
-    lakes.push(lake);
-    return lake;
-}
 
-function makeLake(x, y, level, direction, width, height, lakes) {
-    const size = level === 3 ? 3 : level === 2 ? 6 : 9;
-    const horizontal = direction === 1 || direction === 3;
-    const lakeWidth = horizontal ? size : 3;
-    const lakeHeight = horizontal ? 3 : size;
-    const tiles = [];
-    const startX = Math.max(0, Math.min(width - lakeWidth, x - Math.floor(lakeWidth / 2)));
-    const startY = Math.max(0, Math.min(height - lakeHeight, y - Math.floor(lakeHeight / 2)));
-    for (let ly = startY; ly < startY + lakeHeight; ly++) {
-        for (let lx = startX; lx < startX + lakeWidth; lx++) {
-            tiles.push(indexOf(lx, ly, width));
-        }
-    }
-    const lake = { x: startX, y: startY, width: lakeWidth, height: lakeHeight, level, tiles };
     lakes.push(lake);
     return lake;
 }
@@ -144,125 +253,61 @@ export function generateRivers({ width, height, elevation, mountains, random }) 
         const start = getStart(elevation, width, height, mountain, random);
         if (!start) continue;
 
-        let x = start.x;
-        let y = start.y;
-        let direction = nearestEdgeDirection(x, y, width, height);
-        let level = 3;
+        const initialDirection = nearestEdgeDirection(start.x, start.y, width, height);
+        const path = findRiverPath(
+            start.x, start.y, initialDirection,
+            width, height, elevation, random
+        );
+
+        if (!path.length) continue;
+
         let strength = 1;
-        const path = [];
-        const visited = new Set();
-        const maxSteps = width * height;
+        let previousLevel = elevation[path[0]];
+        let previousDirection = initialDirection;
 
-        for (let step = 0; step < maxSteps; step++) {
-            const index = indexOf(x, y, width);
-            if (visited.has(index)) break;
-            visited.add(index);
-            path.push(index);
-            riverTiles[index] = Math.max(riverTiles[index], strength);
+        for (let i = 0; i < path.length; i++) {
+            const tile = path[i];
+            const x = tile % width;
+            const y = Math.floor(tile / width);
+            const level = elevation[tile];
 
-            if (x === 0 || y === 0 || x === width - 1 || y === height - 1) {
-                if (level === 0) break;
-            }
+            if (i > 0) {
+                const previous = path[i - 1];
+                const px = previous % width;
+                const py = Math.floor(previous / width);
+                const direction = DIRECTIONS.findIndex(d =>
+                    px + d.x === x && py + d.y === y
+                );
 
-            const turn = chooseTurn(random);
-            direction = (direction + turn + 4) % 4;
-            const candidates = [direction, (direction + 3) % 4, (direction + 1) % 4];
-            let next = null;
+                if (direction >= 0) previousDirection = direction;
 
-            for (const candidate of candidates) {
-                const d = DIRECTIONS[candidate];
-                const nx = x + d.x;
-                const ny = y + d.y;
-                if (nx < 0 || ny < 0 || nx >= width || ny >= height) continue;
-                const nextLevel = elevation[indexOf(nx, ny, width)];
-                if (nextLevel > level || nextLevel === 4) continue;
-                if (visited.has(indexOf(nx, ny, width))) continue;
-                next = { x: nx, y: ny, level: nextLevel, direction: candidate };
-                break;
-            }
+                if (level < previousLevel) {
+                    strength = Math.min(4, strength + 1);
+                    const terminal = level === 0;
+                    const lake = makeCliffLake(
+                        x, y, level, previousDirection,
+                        width, height, elevation, lakes, terminal
+                    );
 
-            if (!next) {
-                // Try any legal downhill/level neighbor before terminating.
-                for (let candidate = 0; candidate < 4; candidate++) {
-                    const d = DIRECTIONS[candidate];
-                    const nx = x + d.x, ny = y + d.y;
-                    if (nx < 0 || ny < 0 || nx >= width || ny >= height) continue;
-                    const ni = indexOf(nx, ny, width);
-                    if (!visited.has(ni) && elevation[ni] <= level && elevation[ni] !== 4) {
-                        next = { x: nx, y: ny, level: elevation[ni], direction: candidate };
+                    waterfalls.push({
+                        x, y,
+                        from: previousLevel,
+                        to: level,
+                        direction: previousDirection,
+                        lake
+                    });
+
+                    // The terminal lake is the river mouth. No need to
+                    // continue a narrow channel across the lowland.
+                    if (terminal) {
+                        riverTiles[tile] = Math.max(riverTiles[tile], strength);
                         break;
                     }
                 }
             }
-            if (!next) {
-                // A random walk can exhaust its unvisited Z1 neighbors before
-                // reaching the lowlands. Use a shortest legal downhill route
-                // as a deterministic fallback so the river can reach Z0.
-                if (level === 1) {
-                    const escapePath = findPathToZ0(x, y, width, height, elevation);
-                    for (const tile of escapePath) {
-                        const px = tile % width;
-                        const py = Math.floor(tile / width);
-                        const fromLevel = level;
-                        const toLevel = elevation[tile];
-                        const previous = path.length ? path[path.length - 1] : index;
-                        const previousX = previous % width;
-                        const previousY = Math.floor(previous / width);
-                        const directionToTile = DIRECTIONS.findIndex(d =>
-                            previousX + d.x === px && previousY + d.y === py
-                        );
 
-                        path.push(tile);
-                        riverTiles[tile] = Math.max(riverTiles[tile], strength);
-
-                        if (toLevel < fromLevel) {
-                            const lake = makeTerminalLake(px, py, directionToTile < 0 ? direction : directionToTile, width, height, lakes);
-                            waterfalls.push({
-                                x: px, y: py, from: fromLevel, to: toLevel,
-                                direction: directionToTile < 0 ? direction : directionToTile,
-                                lake
-                            });
-                            level = 0;
-                            break;
-                        }
-                    }
-                }
-                break;
-            }
-
-            if (next.level < level) {
-                if (next.level === 0) {
-                    const lake = makeTerminalLake(next.x, next.y, next.direction, width, height, lakes);
-                    waterfalls.push({
-                        x: next.x, y: next.y, from: level, to: 0,
-                        direction: next.direction, lake
-                    });
-                    path.push(indexOf(next.x, next.y, width));
-                    riverTiles[indexOf(next.x, next.y, width)] = Math.max(
-                        riverTiles[indexOf(next.x, next.y, width)], strength
-                    );
-                    level = 0;
-                    break;
-                }
-
-                const lake = makeLake(next.x, next.y, level, next.direction, width, height, lakes);
-                waterfalls.push({
-                    x: next.x, y: next.y, from: level, to: next.level,
-                    direction: next.direction, lake
-                });
-                level = next.level;
-                strength = Math.min(4, strength + 1);
-                // The lake is a separate visual feature; continue below its outlet.
-                const d = DIRECTIONS[next.direction];
-                x = next.x + d.x;
-                y = next.y + d.y;
-            } else {
-                x = next.x;
-                y = next.y;
-            }
-            if (x < 0 || y < 0 || x >= width || y >= height) break;
-            level = Math.min(level, elevation[indexOf(x, y, width)]);
-            strength = Math.max(strength, 4 - level);
+            riverTiles[tile] = Math.max(riverTiles[tile], strength);
+            previousLevel = level;
         }
 
         rivers.push({ path, source: start, strength: 1 });
