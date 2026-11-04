@@ -140,6 +140,24 @@ export function openWorldInspector(world) {
         image.data[pixel + 3] = 255;
     }
 
+    if (world.rivers && world.rivers.riverTiles) {
+        for (let i = 0; i < world.rivers.riverTiles.length; i++) {
+            if (!world.rivers.riverTiles[i]) continue;
+            const p = i * 4;
+            image.data[p] = 35;
+            image.data[p + 1] = 105;
+            image.data[p + 2] = 165;
+        }
+        for (const lake of world.rivers.lakes || []) {
+            for (const tile of lake.tiles) {
+                const p = tile * 4;
+                image.data[p] = 45;
+                image.data[p + 1] = 125;
+                image.data[p + 2] = 185;
+            }
+        }
+    }
+
     terrainCtx.putImageData(image, 0, 0);
 
     // Initial camera position and zoom.

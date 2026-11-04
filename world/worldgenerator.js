@@ -1,4 +1,5 @@
 import { generateMountains } from "./mountaingenerator.js";
+import { generateRivers } from "./rivergenerator.js";
 
 function createRandom(seed) {
     let state = seed >>> 0;
@@ -47,11 +48,14 @@ export function generateWorld(config, overrides = {}) {
         elevation
     });
 
+    const rivers = generateRivers({ width, height, elevation, mountains, random });
+
     return {
         width,
         height,
         elevation,
         mountains,
+        rivers,
         seed
     };
 }
