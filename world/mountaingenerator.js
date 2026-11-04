@@ -25,14 +25,17 @@ function smoothCircular(values) {
 
 // Creates an irregular elliptical peak.
 // Randomness changes the boundary, never the interior.
+
 function createPeakRadii(width, height, random, pointCount) {
     const radiusX = width / 2;
     const radiusY = height / 2;
 
     const variations = [];
 
+    // Large-scale irregularity:
+    // creates broad protrusions and indentations.
     for (let i = 0; i < pointCount; i++) {
-        variations.push(0.8 + random() * 0.4);
+        variations.push(0.65 + random() * 0.70);
     }
 
     const smoothVariations = smoothCircular(variations);
@@ -44,17 +47,25 @@ function createPeakRadii(width, height, random, pointCount) {
         const cos = Math.cos(angle);
         const sin = Math.sin(angle);
 
-        // Radius of an ellipse in this direction.
         const ellipseRadius = 1 / Math.sqrt(
             (cos * cos) / (radiusX * radiusX) +
             (sin * sin) / (radiusY * radiusY)
         );
 
-        radii.push(ellipseRadius * smoothVariations[i]);
+        // Small-scale irregularity:
+        // adds sharper local changes to the contour.
+        const fineDetail = 0.90 + random() * 0.20;
+
+        radii.push(
+            ellipseRadius *
+            smoothVariations[i] *
+            fineDetail
+        );
     }
 
     return radii;
 }
+
 
 // Expands the existing contour by a random distance.
 // Each contour point gets its own expansion value.
@@ -167,7 +178,7 @@ function generateMountain(
     bands,
     random
 ) {
-    const pointCount = 48;
+    const pointCount = 64;
 
     // Z4: create and fill the central peak.
     let radii = createPeakRadii(
@@ -250,8 +261,13 @@ export function generateMountains({
     ) {
         attempts++;
 
-        const peakWidth = randomInt(random, peakMin, peakMax);
-        const peakHeight = randomInt(random, peakMin, peakMax);
+    let peakWidth = randomInt(random, 4, 10);
+    let peakHeight = randomInt(random, 10, 20);
+
+        // Randomly rotate the mountain's orientation.
+            if (random() < 0.5) {
+         [peakWidth, peakHeight] = [peakHeight, peakWidth];
+}
 
         const x = randomInt(
             random,
