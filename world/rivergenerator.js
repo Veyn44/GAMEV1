@@ -204,7 +204,10 @@ function findRiverPath(startX, startY, width, height, elevation, random) {
 
         if (!segment || !segment.path.length) return [];
 
-        for (const tile of segment.path) {
+        // Each segment includes its starting tile, which is already
+        // the final tile of the previous segment. Skip that shared junction.
+        for (let i = 1; i < segment.path.length; i++) {
+            const tile = segment.path[i];
             if (visited.has(tile)) return [];
             visited.add(tile);
             path.push(tile);
