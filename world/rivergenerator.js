@@ -116,11 +116,15 @@ function findRiverPath(startX, startY, initialDirection, width, height, elevatio
         (((tile * 4 + direction) * runLengths + run) * 2 + (hasTurned ? 1 : 0));
 
     const startTile = indexOf(startX, startY, width);
-    const startState = encode(startTile, initialDirection, 4, false);
-    distances[startState] = 0;
-
     const heap = new MinHeap();
-    heap.push({ state: startState, cost: 0 });
+    // Let the pathfinder choose its first heading toward the nearest valley.
+    // It must still make at least one later turn before reaching Z0.
+    for (let direction = 0; direction < 4; direction++) {
+        const startState = encode(startTile, direction, 4, false);
+        const initialCost = random() * 0.001;
+        distances[startState] = initialCost;
+        heap.push({ state: startState, cost: initialCost });
+    }
 
     let targetState = -1;
 
@@ -161,7 +165,7 @@ function findRiverPath(startX, startY, initialDirection, width, height, elevatio
             // Water never flows uphill or through a Z4 peak.
             if (nextLevel > level || nextLevel === 4) continue;
 
-            const nextRun = changedDirection ? 1 : Math.min(4, run + 1);
+            const nextRun = changedDirection ? 0 : Math.min(4, run + 1);
             const nextTurned = hasTurned || changedDirection;
             const nextState = encode(nextTile, direction, nextRun, nextTurned);
 
@@ -273,9 +277,8 @@ export function generateRivers({ width, height, elevation, mountains, random }) 
         const start = getStart(elevation, width, height, mountain, random);
         if (!start) continue;
 
-        const initialDirection = nearestEdgeDirection(start.x, start.y, width, height);
         const path = findRiverPath(
-            start.x, start.y, initialDirection,
+            start.x, start.y, 0,
             width, height, elevation, random
         );
 
