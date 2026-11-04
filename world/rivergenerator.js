@@ -91,34 +91,29 @@ class MinHeap {
     }
 }
 
-// Find a downhill route while penalizing sharp turns. This is a simplified
-// hydrology-inspired least-cost path: elevation may stay level or decrease,
-// while directional inertia favors longer, smoother river segments.
-// Find the nearest reachable Z0 valley with a shortest-path search.
-// A river may bend freely once, but after every bend it must travel at
-// least four tiles straight before another bend is allowed.
-function findRiverPath(startX, startY, width, height, elevation, random) {
-    const tileCount = width * height;
-    const runLengths = 5; // 0..3 exact, 4 means four or more straight tiles.
-    const stateCount = tileCount * 4 * runLengths * 2;
+// Find the nearest reachable tile of the next lower elevation.
+// Within each elevation band the river holds a heading for seven tiles,
+// then must turn left or right. Reversing direction is never permitted.
+function findElevationSegment(startTile, level, targetLevel, initialDirection, width, height, elevation, random) {
+    const runLengths = 8; // 0..6 steps; 7 means the next step must turn.
+    const stateCount = width * height * 4 * runLengths;
     const distances = new Float64Array(stateCount);
     distances.fill(Infinity);
-
     const parents = new Int32Array(stateCount);
     parents.fill(-1);
 
-    const encode = (tile, direction, run, hasTurned) =>
-        (((tile * 4 + direction) * runLengths + run) * 2 + (hasTurned ? 1 : 0));
+    const encode = (tile, direction, run) =>
+        (tile * 4 + direction) * runLengths + run;
 
-    const startTile = indexOf(startX, startY, width);
     const heap = new MinHeap();
-    // Let the pathfinder choose its first heading toward the nearest valley.
-    // It must still make at least one later turn before reaching Z0.
     for (let direction = 0; direction < 4; direction++) {
-        const startState = encode(startTile, direction, 4, false);
-        const initialCost = random() * 0.001;
-        distances[startState] = initialCost;
-        heap.push({ state: startState, cost: initialCost });
+        // At a new elevation band the river may choose a fresh heading,
+        // but it may not flow directly back along the incoming channel.
+        if (direction === (initialDirection + 2) % 4) continue;
+        const state = encode(startTile, direction, 0);
+        const cost = direction === initialDirection ? 0 : 0.15 + random() * 0.02;
+        distances[state] = cost;
+        heap.push({ state, cost });
     }
 
     let targetState = -1;
@@ -127,29 +122,21 @@ function findRiverPath(startX, startY, width, height, elevation, random) {
         const current = heap.pop();
         if (current.cost !== distances[current.state]) continue;
 
-        const hasTurned = (current.state & 1) === 1;
-        const packed = Math.floor(current.state / 2);
-        const run = packed % runLengths;
-        const directionAndTile = Math.floor(packed / runLengths);
-        const heading = directionAndTile % 4;
-        const tile = Math.floor(directionAndTile / 4);
-        const level = elevation[tile];
-
-        // Reaching Z0 is the destination, but a river must have at least
-        // one genuine bend before its mouth.
-        if (level === 0 && hasTurned) {
-            targetState = current.state;
-            break;
-        }
-
+        const run = current.state % runLengths;
+        const packed = Math.floor(current.state / runLengths);
+        const direction = packed % 4;
+        const tile = Math.floor(packed / 4);
         const x = tile % width;
         const y = Math.floor(tile / width);
 
-        for (let direction = 0; direction < 4; direction++) {
-            const changedDirection = direction !== heading;
-            if (changedDirection && run < 4) continue;
+        for (let nextDirection = 0; nextDirection < 4; nextDirection++) {
+            if (nextDirection === (direction + 2) % 4) continue;
 
-            const d = DIRECTIONS[direction];
+            const turning = nextDirection !== direction;
+            if (run === 7 && !turning) continue;
+            if (run < 7 && turning) continue;
+
+            const d = DIRECTIONS[nextDirection];
             const nx = x + d.x;
             const ny = y + d.y;
             if (nx < 0 || ny < 0 || nx >= width || ny >= height) continue;
@@ -157,37 +144,75 @@ function findRiverPath(startX, startY, width, height, elevation, random) {
             const nextTile = indexOf(nx, ny, width);
             const nextLevel = elevation[nextTile];
 
-            // Water never flows uphill or through a Z4 peak.
+            // Stay on this contour until reaching the next lower contour.
             if (nextLevel > level || nextLevel === 4) continue;
+            if (nextLevel < level && nextLevel !== targetLevel) continue;
 
-            const nextRun = changedDirection ? 0 : Math.min(4, run + 1);
-            const nextTurned = hasTurned || changedDirection;
-            const nextState = encode(nextTile, direction, nextRun, nextTurned);
-
-            // Prefer the shortest route to a lowland valley. A small bend
-            // cost breaks ties in favor of fewer, broader curves; tiny
-            // seeded noise keeps equally good rivers from looking identical.
-            const stepCost = 1 + (changedDirection ? 0.18 : 0) + random() * 0.025;
-            const nextCost = current.cost + stepCost;
+            const nextRun = turning ? 1 : Math.min(7, run + 1);
+            const nextState = encode(nextTile, nextDirection, nextRun);
+            const nextCost = current.cost + 1 + (turning ? 0.03 : 0) + random() * 0.015;
 
             if (nextCost >= distances[nextState]) continue;
 
             distances[nextState] = nextCost;
             parents[nextState] = current.state;
+            if (nextLevel === targetLevel) {
+                targetState = nextState;
+                // Dijkstra heap ordering means this is the nearest valid
+                // lower-elevation landing under the seven-tile rule.
+                heap.items.length = 0;
+                break;
+            }
             heap.push({ state: nextState, cost: nextCost });
         }
+
+        if (targetState >= 0) break;
     }
 
-    if (targetState < 0) return [];
+    if (targetState < 0) return null;
 
     const reversed = [];
     for (let state = targetState; state !== -1; state = parents[state]) {
-        const packed = Math.floor(state / 2);
-        const directionAndTile = Math.floor(packed / runLengths);
-        reversed.push(Math.floor(directionAndTile / 4));
+        reversed.push(Math.floor(state / runLengths / 4));
     }
     reversed.reverse();
-    return reversed;
+    return {
+        path: reversed,
+        direction: Math.floor(targetState / runLengths) % 4
+    };
+}
+
+// Route one mountain river as separate elevation stages: Z3→Z2→Z1→Z0.
+// Every stage independently finds its nearest reachable lower contour.
+function findRiverPath(startX, startY, width, height, elevation, random) {
+    const startTile = indexOf(startX, startY, width);
+    let currentTile = startTile;
+    let currentLevel = elevation[currentTile];
+    let direction = 0;
+    const path = [startTile];
+    const visited = new Set(path);
+
+    while (currentLevel > 0) {
+        const targetLevel = currentLevel - 1;
+        const segment = findElevationSegment(
+            currentTile, currentLevel, targetLevel, direction,
+            width, height, elevation, random
+        );
+
+        if (!segment || !segment.path.length) return [];
+
+        for (const tile of segment.path) {
+            if (visited.has(tile)) return [];
+            visited.add(tile);
+            path.push(tile);
+        }
+
+        currentTile = segment.path[segment.path.length - 1];
+        direction = segment.direction;
+        currentLevel = elevation[currentTile];
+    }
+
+    return path;
 }
 
 // A lake is a half-ellipse whose straight edge sits against the higher
