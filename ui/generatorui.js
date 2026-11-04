@@ -186,8 +186,11 @@ export function initializeGenerator(config) {
         console.log("Generated world:", currentWorld);
     }
 
-    // Generate button repeats the current seed.
-    generateButton.addEventListener("click", generate);
+  // Every Generate Map click creates a new random world.
+generateButton.addEventListener("click", () => {
+    seedInput.value = createRandomSeed();
+    generate();
+});
 
     // Randomize button creates a new seed and generates immediately.
     randomSeedButton.addEventListener("click", () => {
