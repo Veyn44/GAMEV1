@@ -36,6 +36,86 @@ function nearestEdgeDirection(x, y, width, height) {
     return distances.indexOf(Math.min(...distances));
 }
 
+
+function findPathToZ0(startX, startY, width, height, elevation) {
+    const start = indexOf(startX, startY, width);
+    const parent = new Int32Array(width * height);
+    parent.fill(-2);
+    parent[start] = -1;
+
+    const queue = [start];
+    let target = -1;
+
+    for (let head = 0; head < queue.length; head++) {
+        const current = queue[head];
+        if (elevation[current] === 0) {
+            target = current;
+            break;
+        }
+
+        const x = current % width;
+        const y = Math.floor(current / width);
+
+        for (const d of DIRECTIONS) {
+            const nx = x + d.x;
+            const ny = y + d.y;
+            if (nx < 0 || ny < 0 || nx >= width || ny >= height) continue;
+
+            const next = indexOf(nx, ny, width);
+            if (parent[next] !== -2 || elevation[next] > 1 || elevation[next] === 4) continue;
+
+            parent[next] = current;
+            queue.push(next);
+        }
+    }
+
+    if (target < 0) return [];
+
+    const path = [];
+    for (let current = target; current !== start; current = parent[current]) {
+        path.push(current);
+    }
+    path.reverse();
+    return path;
+}
+
+function makeTerminalLake(x, y, direction, width, height, lakes) {
+    const d = DIRECTIONS[direction];
+    const horizontal = direction === 1 || direction === 3;
+    const lakeWidth = horizontal ? 20 : 10;
+    const lakeHeight = horizontal ? 10 : 20;
+
+    // Place the upstream edge close to the waterfall so the river visibly
+    // enters the lake instead of ending in the middle of it.
+    const centerX = x + d.x * 9;
+    const centerY = y + d.y * 9;
+    const startX = Math.max(0, Math.min(width - lakeWidth, Math.round(centerX - lakeWidth / 2)));
+    const startY = Math.max(0, Math.min(height - lakeHeight, Math.round(centerY - lakeHeight / 2)));
+    const tiles = [];
+
+    for (let ly = startY; ly < startY + lakeHeight; ly++) {
+        for (let lx = startX; lx < startX + lakeWidth; lx++) {
+            const nx = (lx - (startX + (lakeWidth - 1) / 2)) / (lakeWidth / 2);
+            const ny = (ly - (startY + (lakeHeight - 1) / 2)) / (lakeHeight / 2);
+            // Rounded, slightly irregular shoreline rather than a hard rectangle.
+            const edge = 1 + 0.06 * Math.sin(lx * 1.7 + ly * 0.9);
+            if (nx * nx + ny * ny <= edge) tiles.push(indexOf(lx, ly, width));
+        }
+    }
+
+    const lake = {
+        x: startX,
+        y: startY,
+        width: lakeWidth,
+        height: lakeHeight,
+        level: 0,
+        type: "terminal",
+        tiles
+    };
+    lakes.push(lake);
+    return lake;
+}
+
 function makeLake(x, y, level, direction, width, height, lakes) {
     const size = level === 3 ? 3 : level === 2 ? 6 : 9;
     const horizontal = direction === 1 || direction === 3;
@@ -114,9 +194,57 @@ export function generateRivers({ width, height, elevation, mountains, random }) 
                     }
                 }
             }
-            if (!next) break;
+            if (!next) {
+                // A random walk can exhaust its unvisited Z1 neighbors before
+                // reaching the lowlands. Use a shortest legal downhill route
+                // as a deterministic fallback so the river can reach Z0.
+                if (level === 1) {
+                    const escapePath = findPathToZ0(x, y, width, height, elevation);
+                    for (const tile of escapePath) {
+                        const px = tile % width;
+                        const py = Math.floor(tile / width);
+                        const fromLevel = level;
+                        const toLevel = elevation[tile];
+                        const previous = path.length ? path[path.length - 1] : index;
+                        const previousX = previous % width;
+                        const previousY = Math.floor(previous / width);
+                        const directionToTile = DIRECTIONS.findIndex(d =>
+                            previousX + d.x === px && previousY + d.y === py
+                        );
+
+                        path.push(tile);
+                        riverTiles[tile] = Math.max(riverTiles[tile], strength);
+
+                        if (toLevel < fromLevel) {
+                            const lake = makeTerminalLake(px, py, directionToTile < 0 ? direction : directionToTile, width, height, lakes);
+                            waterfalls.push({
+                                x: px, y: py, from: fromLevel, to: toLevel,
+                                direction: directionToTile < 0 ? direction : directionToTile,
+                                lake
+                            });
+                            level = 0;
+                            break;
+                        }
+                    }
+                }
+                break;
+            }
 
             if (next.level < level) {
+                if (next.level === 0) {
+                    const lake = makeTerminalLake(next.x, next.y, next.direction, width, height, lakes);
+                    waterfalls.push({
+                        x: next.x, y: next.y, from: level, to: 0,
+                        direction: next.direction, lake
+                    });
+                    path.push(indexOf(next.x, next.y, width));
+                    riverTiles[indexOf(next.x, next.y, width)] = Math.max(
+                        riverTiles[indexOf(next.x, next.y, width)], strength
+                    );
+                    level = 0;
+                    break;
+                }
+
                 const lake = makeLake(next.x, next.y, level, next.direction, width, height, lakes);
                 waterfalls.push({
                     x: next.x, y: next.y, from: level, to: next.level,
