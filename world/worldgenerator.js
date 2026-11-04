@@ -1,4 +1,3 @@
-
 import { generateMountains } from "./mountaingenerator.js";
 
 function createRandom(seed) {
@@ -30,7 +29,8 @@ export function generateWorld(config, overrides = {}) {
         overrides.minimumDistance ??
         config.mountains.minimumDistance;
 
-    const peakMin = config.mountains.peakSize.min;
+    const peakMin =
+        overrides.peakMin ?? config.mountains.peakSize.min;
 
     const peakMax =
         overrides.peakMax ?? config.mountains.peakSize.max;
