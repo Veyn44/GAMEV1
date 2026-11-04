@@ -1,7 +1,7 @@
 
 import { loadConfig } from "./configloader.js";
-import { initializeMenu } from "./ui/mainmenu.js";
-import { initializeGenerator } from "./ui/generatorui.js";
+import { initializeMenu } from "../ui/mainmenu.js";
+import { initializeGenerator } from "../ui/generatorui.js";
 
 async function startApplication() {
     try {
