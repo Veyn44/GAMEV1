@@ -280,7 +280,12 @@ export function generateRivers({ width, height, elevation, mountains, random }) 
 
         let strength = 1;
         let previousLevel = elevation[path[0]];
-        let previousDirection = initialDirection;
+        const firstNext = path[1];
+        let previousDirection = firstNext === undefined ? 0 : DIRECTIONS.findIndex(d =>
+            start.x + d.x === firstNext % width &&
+            start.y + d.y === Math.floor(firstNext / width)
+        );
+        if (previousDirection < 0) previousDirection = 0;
 
         for (let i = 0; i < path.length; i++) {
             const tile = path[i];
