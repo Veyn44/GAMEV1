@@ -1,9 +1,9 @@
 const COLORS = [
-    "#78945d", // Z0 - zelená nížina
-    "#b49a6a", // Z1 - vyprahlá tráva
-    "#858b91", // Z2 - šedá horská půda
-    "#e8e8e8", // Z3 - bílý vysokohorský terén
-    "#17191d"  // Z4 - černý horský vrchol
+    "#78945d", // Z0 - lowland
+    "#b4a36c", // Z1 - foothills
+    "#858b91", // Z2 - mountain slopes
+    "#e4e8e8", // Z3 - playable upper terrain
+    "#ffffff"  // Z4 - peak
 ];
 
 export function openWorldInspector(world) {
