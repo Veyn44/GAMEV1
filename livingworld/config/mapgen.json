@@ -1,0 +1,61 @@
+
+{
+  "map": {
+    "width": 512,
+    "height": 256,
+    "seed": 12345
+  },
+
+  "mountains": {
+    "count": 10,
+    "minimumDistance": 30,
+    "peakSize": {
+      "min": 4,
+      "max": 10
+    },
+    "irregularity": 0.65
+  },
+
+  "elevation": {
+    "levels": 4,
+    "bands": {
+      "z3": {
+        "min": 2,
+        "max": 4
+      },
+      "z2": {
+        "min": 4,
+        "max": 6
+      },
+      "z1": {
+        "min": 6,
+        "max": 8
+      },
+      "z0": {
+        "min": 8,
+        "max": 10
+      }
+    }
+  },
+
+  "rivers": {
+    "minimumLengthOnElevation": 10,
+    "diagonalMovement": false,
+    "allowRiverCrossing": false
+  },
+
+  "biomes": {
+    "z0": {
+      "desertChance": 0.5
+    },
+    "z1": {
+      "type": "grassland"
+    },
+    "z2": {
+      "type": "mountain"
+    },
+    "z3": {
+      "type": "frozen"
+    }
+  }
+}
