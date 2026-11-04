@@ -116,7 +116,7 @@ function findRiverPath(startX, startY, initialDirection, width, height, elevatio
     heap.push({ state: startState, cost: 0 });
 
     let targetState = -1;
-    const turnPenalty = 2.4;
+    const turnPenalty = 0.95;
 
     while (heap.length) {
         const current = heap.pop();
@@ -157,9 +157,9 @@ function findRiverPath(startX, startY, initialDirection, width, height, elevatio
             // allowed, but costs more than continuing in the same direction.
             const bendCost = turnDistance === 0 ? 0 : turnDistance === 1
                 ? turnPenalty
-                : turnPenalty * 2.5;
+                : turnPenalty * 3.2;
             const downhillBonus = nextLevel < level ? 0.12 : 0;
-            const stepCost = 1 + bendCost - downhillBonus + random() * 0.08;
+            const stepCost = 1 + bendCost - downhillBonus + random() * 0.28;
             const nextCost = current.cost + stepCost;
 
             if (nextCost >= distances[nextState]) continue;
@@ -184,15 +184,19 @@ function findRiverPath(startX, startY, initialDirection, width, height, elevatio
 // elevation cliff and whose rounded body spreads into the lower terrain.
 function makeCliffLake(x, y, lowerLevel, direction, width, height, elevation, lakes, terminal = false) {
     const d = DIRECTIONS[direction];
-    const across = terminal ? 20 : lowerLevel === 2 ? 6 : 3;
-    const depth = terminal ? 10 : lowerLevel === 2 ? 3 : 3;
+    // Give the shoreline enough room to meet nearby cliffs instead of
+    // ending as a small, isolated half-ellipse. Higher terrain clips the
+    // shape naturally, producing a cove pressed against the cliff.
+    const across = terminal ? 30 : lowerLevel === 2 ? 10 : 7;
+    const depth = terminal ? 14 : lowerLevel === 2 ? 6 : 5;
     const halfAcross = across / 2;
     const halfDepth = depth / 2;
 
-    const minX = Math.max(0, x - across - depth);
-    const maxX = Math.min(width - 1, x + across + depth);
-    const minY = Math.max(0, y - across - depth);
-    const maxY = Math.min(height - 1, y + across + depth);
+    const searchRadius = across + depth + 2;
+    const minX = Math.max(0, x - searchRadius);
+    const maxX = Math.min(width - 1, x + searchRadius);
+    const minY = Math.max(0, y - searchRadius);
+    const maxY = Math.min(height - 1, y + searchRadius);
     const tiles = [];
 
     for (let ly = minY; ly <= maxY; ly++) {
@@ -204,7 +208,7 @@ function makeCliffLake(x, y, lowerLevel, direction, width, height, elevation, la
 
             // The broad, flat side is at the cliff. The lake bulges outward
             // in the direction of the falling water.
-            const normalizedAlong = along / depth;
+            const normalizedAlong = along / halfDepth;
             const normalizedSideways = sideways / halfAcross;
             const shoreline = 1 + 0.045 * Math.sin(lx * 1.71 + ly * 0.93);
 
