@@ -49,6 +49,46 @@ export function initializeGenerator(config) {
 
     container.innerHTML = "";
 
+    // SEED CONTROL
+    const seedControl = document.createElement("div");
+    seedControl.className = "control";
+
+    seedControl.innerHTML = `
+        <label>
+            World seed
+        </label>
+
+        <div style="display:flex; gap:8px; margin-top:8px;">
+            <input
+                id="worldSeed"
+                type="number"
+                min="0"
+                max="4294967295"
+                style="flex:1; min-width:0;"
+            >
+
+            <button
+                id="randomSeedButton"
+                type="button"
+                style="padding:8px 12px;"
+            >
+                RANDOMIZE
+            </button>
+        </div>
+    `;
+
+    container.appendChild(seedControl);
+
+    const seedInput = seedControl.querySelector("#worldSeed");
+    const randomSeedButton =
+        seedControl.querySelector("#randomSeedButton");
+
+    function createRandomSeed() {
+        return Math.floor(Math.random() * 4294967296);
+    }
+
+    seedInput.value = createRandomSeed();
+
     settings.forEach(setting => {
         const control = document.createElement("div");
         control.className = "control";
@@ -92,7 +132,7 @@ export function initializeGenerator(config) {
 
     let currentWorld = null;
 
-    // Create the Inspector button next to Generate Map.
+    // INSPECT WORLD BUTTON
     const inspectButton = document.createElement("button");
 
     inspectButton.id = "inspectWorldButton";
@@ -115,10 +155,22 @@ export function initializeGenerator(config) {
     function generate() {
         const values = getSettings();
 
+        const seed = Number(seedInput.value);
+
+        if (
+            !Number.isSafeInteger(seed) ||
+            seed < 0 ||
+            seed > 4294967295
+        ) {
+            alert("Seed must be an integer between 0 and 4294967295.");
+            return;
+        }
+
         currentWorld = generateWorld(config, {
             mountainCount: values.mountainCount,
             peakMax: values.peakMax,
-            minimumDistance: values.minimumDistance
+            minimumDistance: values.minimumDistance,
+            seed: seed
         });
 
         renderMap(currentWorld, mapPreview);
@@ -134,7 +186,14 @@ export function initializeGenerator(config) {
         console.log("Generated world:", currentWorld);
     }
 
+    // Generate button repeats the current seed.
     generateButton.addEventListener("click", generate);
+
+    // Randomize button creates a new seed and generates immediately.
+    randomSeedButton.addEventListener("click", () => {
+        seedInput.value = createRandomSeed();
+        generate();
+    });
 
     inspectButton.addEventListener("click", () => {
         if (!currentWorld) return;
@@ -142,6 +201,6 @@ export function initializeGenerator(config) {
         openWorldInspector(currentWorld);
     });
 
-    // Generate the first map automatically.
+    // Generate the first random map automatically.
     generate();
 }
