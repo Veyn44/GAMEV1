@@ -208,7 +208,7 @@ function makeCliffLake(x, y, lowerLevel, direction, width, height, elevation, la
 
             // The broad, flat side is at the cliff. The lake bulges outward
             // in the direction of the falling water.
-            const normalizedAlong = along / halfDepth;
+            const normalizedAlong = along / depth;
             const normalizedSideways = sideways / halfAcross;
             const shoreline = 1 + 0.045 * Math.sin(lx * 1.71 + ly * 0.93);
 
