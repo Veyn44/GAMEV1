@@ -94,47 +94,56 @@ class MinHeap {
 // Find the nearest reachable tile of the next lower elevation.
 // Within each elevation band the river holds a heading for seven tiles,
 // then must turn left or right. Reversing direction is never permitted.
-function findElevationSegment(startTile, level, targetLevel, initialDirection, width, height, elevation, random) {
-    const runLengths = 8; // 0..6 steps; 7 means the next step must turn.
+// Breadth-first search finds the nearest lower-elevation landing.
+// The heading is held for exactly seven tiles, then a left/right turn
+// is mandatory. Reverse movement is never allowed.
+function findElevationSegment(startTile, level, targetLevel, incomingDirection, width, height, elevation, random) {
+    const runLengths = 8;
     const stateCount = width * height * 4 * runLengths;
-    const distances = new Float64Array(stateCount);
-    distances.fill(Infinity);
     const parents = new Int32Array(stateCount);
-    parents.fill(-1);
+    parents.fill(-2);
+    const queue = new Int32Array(stateCount);
+    let read = 0;
+    let write = 0;
 
     const encode = (tile, direction, run) =>
         (tile * 4 + direction) * runLengths + run;
 
-    const heap = new MinHeap();
-    for (let direction = 0; direction < 4; direction++) {
-        // At a new elevation band the river may choose a fresh heading,
-        // but it may not flow directly back along the incoming channel.
-        if (direction === (initialDirection + 2) % 4) continue;
+    const initialDirections = [0, 1, 2, 3];
+    // Seeded shuffle makes equally near routes vary between worlds.
+    for (let i = initialDirections.length - 1; i > 0; i--) {
+        const j = Math.floor(random() * (i + 1));
+        [initialDirections[i], initialDirections[j]] =
+            [initialDirections[j], initialDirections[i]];
+    }
+
+    for (const direction of initialDirections) {
+        if (incomingDirection !== null &&
+            direction === (incomingDirection + 2) % 4) continue;
         const state = encode(startTile, direction, 0);
-        const cost = direction === initialDirection ? 0 : 0.15 + random() * 0.02;
-        distances[state] = cost;
-        heap.push({ state, cost });
+        if (parents[state] !== -2) continue;
+        parents[state] = -1;
+        queue[write++] = state;
     }
 
     let targetState = -1;
 
-    while (heap.length) {
-        const current = heap.pop();
-        if (current.cost !== distances[current.state]) continue;
-
-        const run = current.state % runLengths;
-        const packed = Math.floor(current.state / runLengths);
+    while (read < write) {
+        const state = queue[read++];
+        const run = state % runLengths;
+        const packed = Math.floor(state / runLengths);
         const direction = packed % 4;
         const tile = Math.floor(packed / 4);
+
         const x = tile % width;
         const y = Math.floor(tile / width);
+        const nextDirections = run === 7
+            ? [(direction + 1) % 4, (direction + 3) % 4]
+            : [direction];
 
-        for (let nextDirection = 0; nextDirection < 4; nextDirection++) {
+        for (const nextDirection of nextDirections) {
+            // The opposite direction is excluded even after a forced turn.
             if (nextDirection === (direction + 2) % 4) continue;
-
-            const turning = nextDirection !== direction;
-            if (run === 7 && !turning) continue;
-            if (run < 7 && turning) continue;
 
             const d = DIRECTIONS[nextDirection];
             const nx = x + d.x;
@@ -144,29 +153,22 @@ function findElevationSegment(startTile, level, targetLevel, initialDirection, w
             const nextTile = indexOf(nx, ny, width);
             const nextLevel = elevation[nextTile];
 
-            // Stay on this contour until reaching the next lower contour.
             if (nextLevel > level || nextLevel === 4) continue;
             if (nextLevel < level && nextLevel !== targetLevel) continue;
 
-            const nextRun = turning ? 1 : Math.min(7, run + 1);
+            const nextRun = nextDirection === direction ? Math.min(7, run + 1) : 1;
             const nextState = encode(nextTile, nextDirection, nextRun);
-            const nextCost = current.cost + 1 + (turning ? 0.03 : 0) + random() * 0.015;
+            if (parents[nextState] !== -2) continue;
 
-            if (nextCost >= distances[nextState]) continue;
-
-            distances[nextState] = nextCost;
-            parents[nextState] = current.state;
+            parents[nextState] = state;
             if (nextLevel === targetLevel) {
                 targetState = nextState;
-                // Dijkstra heap ordering means this is the nearest valid
-                // lower-elevation landing under the seven-tile rule.
-                heap.items.length = 0;
+                read = write;
                 break;
             }
-            heap.push({ state: nextState, cost: nextCost });
-        }
 
-        if (targetState >= 0) break;
+            queue[write++] = nextState;
+        }
     }
 
     if (targetState < 0) return null;
@@ -176,26 +178,28 @@ function findElevationSegment(startTile, level, targetLevel, initialDirection, w
         reversed.push(Math.floor(state / runLengths / 4));
     }
     reversed.reverse();
+
     return {
         path: reversed,
         direction: Math.floor(targetState / runLengths) % 4
     };
 }
 
-// Route one mountain river as separate elevation stages: Z3→Z2→Z1→Z0.
-// Every stage independently finds its nearest reachable lower contour.
+// Route a river one elevation band at a time: Z3→Z2→Z1→Z0.
+// Each new band resets the seven-tile counter but keeps the incoming
+// heading so the river cannot immediately turn back toward its source.
 function findRiverPath(startX, startY, width, height, elevation, random) {
     const startTile = indexOf(startX, startY, width);
     let currentTile = startTile;
     let currentLevel = elevation[currentTile];
-    let direction = 0;
+    let incomingDirection = null;
     const path = [startTile];
     const visited = new Set(path);
 
     while (currentLevel > 0) {
         const targetLevel = currentLevel - 1;
         const segment = findElevationSegment(
-            currentTile, currentLevel, targetLevel, direction,
+            currentTile, currentLevel, targetLevel, incomingDirection,
             width, height, elevation, random
         );
 
@@ -208,7 +212,7 @@ function findRiverPath(startX, startY, width, height, elevation, random) {
         }
 
         currentTile = segment.path[segment.path.length - 1];
-        direction = segment.direction;
+        incomingDirection = segment.direction;
         currentLevel = elevation[currentTile];
     }
 
