@@ -35,11 +35,6 @@ function getStart(elevation, width, height, mountain, random) {
     return candidates[Math.floor(random() * candidates.length)];
 }
 
-function nearestEdgeDirection(x, y, width, height) {
-    const distances = [y, width - 1 - x, height - 1 - y, x];
-    return distances.indexOf(Math.min(...distances));
-}
-
 // Small binary min-heap used by the direction-aware Dijkstra search.
 class MinHeap {
     constructor() {
@@ -102,7 +97,7 @@ class MinHeap {
 // Find the nearest reachable Z0 valley with a shortest-path search.
 // A river may bend freely once, but after every bend it must travel at
 // least four tiles straight before another bend is allowed.
-function findRiverPath(startX, startY, initialDirection, width, height, elevation, random) {
+function findRiverPath(startX, startY, width, height, elevation, random) {
     const tileCount = width * height;
     const runLengths = 5; // 0..3 exact, 4 means four or more straight tiles.
     const stateCount = tileCount * 4 * runLengths * 2;
@@ -278,8 +273,7 @@ export function generateRivers({ width, height, elevation, mountains, random }) 
         if (!start) continue;
 
         const path = findRiverPath(
-            start.x, start.y, 0,
-            width, height, elevation, random
+            start.x, start.y, width, height, elevation, random
         );
 
         if (!path.length) continue;
