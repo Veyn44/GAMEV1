@@ -1,0 +1,54 @@
+
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Living World</title>
+    <link rel="stylesheet" href="CSS/main.css">
+</head>
+<body>
+
+    <div id="mainMenu" class="screen">
+        <div class="menu-content">
+            <h1>LIVING WORLD</h1>
+            <p class="subtitle">WORLD SIMULATION PROJECT</p>
+
+            <button id="newWorldButton">NEW WORLD</button>
+            <button id="loadWorldButton" disabled>LOAD WORLD</button>
+            <button id="generatorButton">WORLD GENERATOR</button>
+            <button id="settingsButton" disabled>SETTINGS</button>
+
+            <p class="version">EARLY DEVELOPMENT BUILD</p>
+        </div>
+    </div>
+
+    <div id="generatorScreen" class="screen hidden">
+        <header>
+            <h2>WORLD GENERATOR</h2>
+            <button id="backButton">BACK TO MENU</button>
+        </header>
+
+        <main class="generator-layout">
+            <section class="map-panel">
+                <h3>WORLD PREVIEW</h3>
+                <div id="mapPreview">
+                    <span>MAP WILL APPEAR HERE</span>
+                </div>
+                <p id="mapInfo">512 × 256 | 131 072 tiles</p>
+                <button id="generateButton">GENERATE MAP</button>
+            </section>
+
+            <section class="settings-panel">
+                <h3>GENERATION SETTINGS</h3>
+
+                <div id="generatorControls">
+                    <p>Loading configuration...</p>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <script type="module" src="JS/main.js"></script>
+</body>
+</html>

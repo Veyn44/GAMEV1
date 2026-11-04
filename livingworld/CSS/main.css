@@ -1,0 +1,148 @@
+
+* {
+    box-sizing: border-box;
+}
+
+body {
+    margin: 0;
+    background: #15171d;
+    color: #e5e5e5;
+    font-family: Arial, sans-serif;
+}
+
+button {
+    background: #343945;
+    color: white;
+    border: 1px solid #555c6b;
+    padding: 12px 20px;
+    cursor: pointer;
+    font-size: 14px;
+    transition: 0.2s;
+}
+
+button:hover:not(:disabled) {
+    background: #596477;
+}
+
+button:disabled {
+    opacity: 0.35;
+    cursor: not-allowed;
+}
+
+.screen {
+    min-height: 100vh;
+}
+
+.hidden {
+    display: none !important;
+}
+
+/* MAIN MENU */
+
+#mainMenu {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    background:
+        radial-gradient(ellipse at center, #303746 0%, #15171d 70%);
+}
+
+.menu-content {
+    width: 320px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    text-align: center;
+}
+
+.menu-content h1 {
+    font-size: 38px;
+    letter-spacing: 5px;
+    color: #d9d0bd;
+}
+
+.subtitle {
+    color: #9299a8;
+    font-size: 11px;
+    letter-spacing: 3px;
+    margin-bottom: 35px;
+}
+
+.version {
+    margin-top: 35px;
+    color: #777e8a;
+    font-size: 11px;
+}
+
+/* GENERATOR */
+
+#generatorScreen {
+    padding: 24px;
+}
+
+header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-bottom: 1px solid #414652;
+    padding-bottom: 15px;
+}
+
+.generator-layout {
+    display: grid;
+    grid-template-columns: minmax(0, 1.6fr) minmax(280px, 1fr);
+    gap: 24px;
+    margin-top: 24px;
+}
+
+.map-panel,
+.settings-panel {
+    background: #20242d;
+    border: 1px solid #414652;
+    padding: 20px;
+}
+
+#mapPreview {
+    background: #111820;
+    border: 1px solid #424b5a;
+    width: 100%;
+    aspect-ratio: 2 / 1;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    color: #777f8e;
+}
+
+#mapInfo {
+    color: #9299a8;
+    font-size: 12px;
+}
+
+#generateButton {
+    width: 100%;
+    margin-top: 15px;
+}
+
+.control {
+    margin-bottom: 22px;
+}
+
+.control label {
+    display: block;
+    margin-bottom: 8px;
+}
+
+.control input[type="range"] {
+    width: 100%;
+}
+
+.control-value {
+    color: #a9c5a0;
+    float: right;
+}
+
+@media (max-width: 800px) {
+    .generator-layout {
+        grid-template-columns: 1fr;
+    }
+}
