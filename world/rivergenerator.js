@@ -99,34 +99,46 @@ class MinHeap {
 // Find a downhill route while penalizing sharp turns. This is a simplified
 // hydrology-inspired least-cost path: elevation may stay level or decrease,
 // while directional inertia favors longer, smoother river segments.
+// Find the nearest reachable Z0 valley with a shortest-path search.
+// A river may bend freely once, but after every bend it must travel at
+// least four tiles straight before another bend is allowed.
 function findRiverPath(startX, startY, initialDirection, width, height, elevation, random) {
     const tileCount = width * height;
-    const stateCount = tileCount * 4;
+    const runLengths = 5; // 0..3 exact, 4 means four or more straight tiles.
+    const stateCount = tileCount * 4 * runLengths * 2;
     const distances = new Float64Array(stateCount);
     distances.fill(Infinity);
 
     const parents = new Int32Array(stateCount);
     parents.fill(-1);
 
+    const encode = (tile, direction, run, hasTurned) =>
+        (((tile * 4 + direction) * runLengths + run) * 2 + (hasTurned ? 1 : 0));
+
     const startTile = indexOf(startX, startY, width);
-    const startState = startTile * 4 + initialDirection;
+    const startState = encode(startTile, initialDirection, 4, false);
     distances[startState] = 0;
 
     const heap = new MinHeap();
     heap.push({ state: startState, cost: 0 });
 
     let targetState = -1;
-    const turnPenalty = 0.95;
 
     while (heap.length) {
         const current = heap.pop();
         if (current.cost !== distances[current.state]) continue;
 
-        const tile = Math.floor(current.state / 4);
-        const heading = current.state % 4;
+        const hasTurned = (current.state & 1) === 1;
+        const packed = Math.floor(current.state / 2);
+        const run = packed % runLengths;
+        const directionAndTile = Math.floor(packed / runLengths);
+        const heading = directionAndTile % 4;
+        const tile = Math.floor(directionAndTile / 4);
         const level = elevation[tile];
 
-        if (level === 0) {
+        // Reaching Z0 is the destination, but a river must have at least
+        // one genuine bend before its mouth.
+        if (level === 0 && hasTurned) {
             targetState = current.state;
             break;
         }
@@ -135,31 +147,28 @@ function findRiverPath(startX, startY, initialDirection, width, height, elevatio
         const y = Math.floor(tile / width);
 
         for (let direction = 0; direction < 4; direction++) {
+            const changedDirection = direction !== heading;
+            if (changedDirection && run < 4) continue;
+
             const d = DIRECTIONS[direction];
             const nx = x + d.x;
             const ny = y + d.y;
-
             if (nx < 0 || ny < 0 || nx >= width || ny >= height) continue;
 
             const nextTile = indexOf(nx, ny, width);
             const nextLevel = elevation[nextTile];
 
-            // Water never flows uphill or through the Z4 peak.
+            // Water never flows uphill or through a Z4 peak.
             if (nextLevel > level || nextLevel === 4) continue;
 
-            const nextState = nextTile * 4 + direction;
-            const turnDistance = Math.min(
-                (direction - heading + 4) % 4,
-                (heading - direction + 4) % 4
-            );
+            const nextRun = changedDirection ? 1 : Math.min(4, run + 1);
+            const nextTurned = hasTurned || changedDirection;
+            const nextState = encode(nextTile, direction, nextRun, nextTurned);
 
-            // A half-turn is strongly discouraged; a 90-degree bend is
-            // allowed, but costs more than continuing in the same direction.
-            const bendCost = turnDistance === 0 ? 0 : turnDistance === 1
-                ? turnPenalty
-                : turnPenalty * 3.2;
-            const downhillBonus = nextLevel < level ? 0.12 : 0;
-            const stepCost = 1 + bendCost - downhillBonus + random() * 0.28;
+            // Prefer the shortest route to a lowland valley. A small bend
+            // cost breaks ties in favor of fewer, broader curves; tiny
+            // seeded noise keeps equally good rivers from looking identical.
+            const stepCost = 1 + (changedDirection ? 0.18 : 0) + random() * 0.025;
             const nextCost = current.cost + stepCost;
 
             if (nextCost >= distances[nextState]) continue;
@@ -174,7 +183,9 @@ function findRiverPath(startX, startY, initialDirection, width, height, elevatio
 
     const reversed = [];
     for (let state = targetState; state !== -1; state = parents[state]) {
-        reversed.push(Math.floor(state / 4));
+        const packed = Math.floor(state / 2);
+        const directionAndTile = Math.floor(packed / runLengths);
+        reversed.push(Math.floor(directionAndTile / 4));
     }
     reversed.reverse();
     return reversed;
@@ -210,7 +221,12 @@ function makeCliffLake(x, y, lowerLevel, direction, width, height, elevation, la
             // in the direction of the falling water.
             const normalizedAlong = along / depth;
             const normalizedSideways = sideways / halfAcross;
-            const shoreline = 1 + 0.045 * Math.sin(lx * 1.71 + ly * 0.93);
+            // Multi-scale deterministic shoreline noise: retain the same
+            // lake footprint, but break up the perfectly clean pixel edge.
+            const shoreline = 1
+                + 0.10 * Math.sin(lx * 1.71 + ly * 0.93)
+                + 0.045 * Math.sin(lx * 3.17 - ly * 2.41)
+                + 0.025 * Math.cos(lx * 5.13 + ly * 4.37);
 
             if (along < 0 || normalizedAlong * normalizedAlong +
                 normalizedSideways * normalizedSideways > shoreline) continue;
