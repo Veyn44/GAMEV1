@@ -7,6 +7,8 @@ const elevationColors = [
     "#ffffff"  // Z4 - peak
 ];
 
+const DESERT_COLOR = [211, 181, 112];
+
 export function renderMap(world, container) {
     container.innerHTML = "";
 
@@ -43,6 +45,18 @@ export function renderMap(world, container) {
         image.data[pixel + 1] = color[1];
         image.data[pixel + 2] = color[2];
         image.data[pixel + 3] = 255;
+    }
+
+    // Desert is a biome overlay, not an elevation. It is applied before
+    // water so rivers and lakes remain visibly water even at the map edge.
+    if (world.desertTiles) {
+        for (let i = 0; i < world.desertTiles.length; i++) {
+            if (!world.desertTiles[i]) continue;
+            const p = i * 4;
+            image.data[p] = DESERT_COLOR[0];
+            image.data[p + 1] = DESERT_COLOR[1];
+            image.data[p + 2] = DESERT_COLOR[2];
+        }
     }
 
     if (world.rivers && world.rivers.riverTiles) {

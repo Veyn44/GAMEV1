@@ -1,6 +1,7 @@
 import { generateMountains } from "./mountaingenerator.js";
 import { generateRivers } from "./rivergenerator.js";
 import { generateRamps } from "./rampgenerator.js";
+import { generateDesert } from "./desertgenerator.js";
 
 function createRandom(seed) {
     let state = seed >>> 0;
@@ -57,12 +58,20 @@ export function generateWorld(config, overrides = {}) {
         rampsPerPeak: overrides.rampsPerPeak ?? 1
     });
 
+    // Generate the new biome only after existing terrain systems finish.
+    // This keeps the established mountain, river and ramp random sequences intact.
+    const desert = generateDesert({
+        width, height, elevation, rivers, random
+    });
+
     return {
         width,
         height,
         elevation,
         mountains,
         rivers,
+        desertTiles: desert.desertTiles,
+        desertStats: desert.stats,
         cliffTiles: ramps.cliffTiles,
         rampTiles: ramps.rampTiles,
         rampStats: ramps.stats,
