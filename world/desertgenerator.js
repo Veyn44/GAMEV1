@@ -79,34 +79,58 @@ function buildWaterDistance(width, height, water, maxDistance) {
     return distance;
 }
 
-function createBorderWaves(random, variation) {
-    return Array.from({ length: 4 }, () => ({
-        phaseA: random() * Math.PI * 2,
-        phaseB: random() * Math.PI * 2,
-        amplitudeA: variation * 0.7,
-        amplitudeB: variation * 0.3,
-        // More frequent bends than the first pass: several waves along
-        // each map edge, with a smaller, faster secondary ripple.
-        frequencyA: 3.5 + random() * 2.5,
-        frequencyB: 8 + random() * 5
-    }));
+function smoothNoiseProfile(random, length, minDepth, maxDepth, variation) {
+    const values = new Float32Array(length);
+    const span = maxDepth - minDepth;
+    const detailAmplitude = Math.min(4, variation * 0.2);
+
+    // Randomly spaced control points prevent the border from repeating a
+    // regular wave pattern. Smooth interpolation keeps the coastline organic.
+    const anchors = [{ position: 0, depth: randomInt(random, minDepth, maxDepth) }];
+    let position = 0;
+    while (position < length - 1) {
+        position = Math.min(length - 1, position + randomInt(random, 7, 16));
+        anchors.push({ position, depth: randomInt(random, minDepth, maxDepth) });
+    }
+
+    let segment = 0;
+    for (let i = 0; i < length; i++) {
+        while (segment < anchors.length - 2 && i > anchors[segment + 1].position) {
+            segment++;
+        }
+
+        const a = anchors[segment];
+        const b = anchors[segment + 1];
+        const rawT = b.position === a.position ? 0 : (i - a.position) / (b.position - a.position);
+        const t = rawT * rawT * (3 - 2 * rawT);
+        const broadDepth = a.depth + (b.depth - a.depth) * t;
+
+        // A second, finer irregular layer breaks up long smooth stretches.
+        const detail = (random() * 2 - 1) * detailAmplitude;
+        values[i] = Math.max(minDepth, Math.min(maxDepth, broadDepth + detail));
+    }
+
+    return values;
 }
 
-function getBorderDepth(position, length, wave, minDepth, maxDepth) {
-    const t = length <= 1 ? 0 : position / (length - 1);
-    const middle = (minDepth + maxDepth) / 2;
-    const depth = middle
-        + Math.sin(t * Math.PI * 2 * wave.frequencyA + wave.phaseA) * wave.amplitudeA
-        + Math.sin(t * Math.PI * 2 * wave.frequencyB + wave.phaseB) * wave.amplitudeB;
+function createBorderWaves(random, length, minDepth, maxDepth, variation) {
+    return Array.from({ length: 4 }, () =>
+        smoothNoiseProfile(random, length, minDepth, maxDepth, variation)
+    );
+}
 
-    // The edge may fluctuate strongly, but its actual inland reach is
-    // always constrained to the agreed 20–40 tile band.
-    return Math.max(minDepth, Math.min(maxDepth, depth));
+function getBorderDepth(position, profile) {
+    return profile[Math.max(0, Math.min(profile.length - 1, position))];
 }
 
 function generateBorderDesert(width, height, elevation, water, random, options) {
     const { borderMinDepth, borderMaxDepth, borderVariation } = options;
-    const waves = createBorderWaves(random, borderVariation);
+    const waves = [
+        createBorderWaves(random, height, borderMinDepth, borderMaxDepth, borderVariation)[0],
+        createBorderWaves(random, height, borderMinDepth, borderMaxDepth, borderVariation)[0],
+        createBorderWaves(random, width, borderMinDepth, borderMaxDepth, borderVariation)[0],
+        createBorderWaves(random, width, borderMinDepth, borderMaxDepth, borderVariation)[0]
+    ];
     const desert = new Uint8Array(width * height);
 
     for (let y = 0; y < height; y++) {
@@ -115,10 +139,10 @@ function generateBorderDesert(width, height, elevation, water, random, options) 
             if (elevation[tile] !== 0 || water[tile]) continue;
 
             const insideBorder =
-                x <= getBorderDepth(y, height, waves[0], borderMinDepth, borderMaxDepth) ||
-                width - 1 - x <= getBorderDepth(y, height, waves[1], borderMinDepth, borderMaxDepth) ||
-                y <= getBorderDepth(x, width, waves[2], borderMinDepth, borderMaxDepth) ||
-                height - 1 - y <= getBorderDepth(x, width, waves[3], borderMinDepth, borderMaxDepth);
+                x <= getBorderDepth(y, waves[0]) ||
+                width - 1 - x <= getBorderDepth(y, waves[1]) ||
+                y <= getBorderDepth(x, waves[2]) ||
+                height - 1 - y <= getBorderDepth(x, waves[3]);
 
             if (insideBorder) desert[tile] = 1;
         }
