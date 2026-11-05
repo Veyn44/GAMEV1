@@ -61,7 +61,11 @@ export function generateWorld(config, overrides = {}) {
     // Generate the new biome only after existing terrain systems finish.
     // This keeps the established mountain, river and ramp random sequences intact.
     const desert = generateDesert({
-        width, height, elevation, rivers, random
+        width, height, elevation, rivers, random,
+        options: {
+            borderDepth: overrides.desertDepth ?? 30,
+            borderGrain: overrides.desertGrain ?? 5
+        }
     });
 
     return {

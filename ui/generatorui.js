@@ -57,6 +57,20 @@ export function initializeGenerator(config) {
             value: 1,
             min: 1,
             max: 4
+        },
+        {
+            key: "desertGrain",
+            label: "Desert grain",
+            value: 5,
+            min: 1,
+            max: 10
+        },
+        {
+            key: "desertDepth",
+            label: "Desert distance from edge",
+            value: 30,
+            min: 10,
+            max: 60
         }
     ];
 
@@ -210,6 +224,8 @@ export function initializeGenerator(config) {
             rampSpacing: values.rampSpacing,
             rampMaxLength: values.rampMaxLength,
             rampsPerPeak: values.rampsPerPeak,
+            desertGrain: values.desertGrain,
+            desertDepth: values.desertDepth,
             seed: seed
         });
 
