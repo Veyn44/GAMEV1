@@ -50,7 +50,7 @@ export function generateWorld(config, overrides = {}) {
     });
 
     const rivers = generateRivers({ width, height, elevation, mountains, random });
-    const ramps = generateRamps({ width, height, elevation, random });
+    const ramps = generateRamps({ width, height, elevation, rivers, random });
 
     return {
         width,
@@ -60,6 +60,7 @@ export function generateWorld(config, overrides = {}) {
         rivers,
         cliffTiles: ramps.cliffTiles,
         rampTiles: ramps.rampTiles,
+        rampStats: ramps.stats,
         seed
     };
 }

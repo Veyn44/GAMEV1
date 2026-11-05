@@ -1,16 +1,13 @@
-// Direction bits describe the cliff edge on the HIGHER tile.
-const EDGE = {
-    NORTH: 1,
-    EAST: 2,
-    SOUTH: 4,
-    WEST: 8
-};
+// Directional cliff-edge bits are stored on the higher-elevation tile.
+const EDGE = { NORTH: 1, EAST: 2, SOUTH: 4, WEST: 8 };
+const MAX_RAMP_CLIFF_PERCENT = 10;
+const MIN_WATER_CLEARANCE = 4;
 
 const DIRECTIONS = [
-    { dx: 0, dy: -1, bit: EDGE.NORTH, tangent: [[-1, 0], [1, 0]] },
-    { dx: 1, dy: 0, bit: EDGE.EAST, tangent: [[0, -1], [0, 1]] },
-    { dx: 0, dy: 1, bit: EDGE.SOUTH, tangent: [[-1, 0], [1, 0]] },
-    { dx: -1, dy: 0, bit: EDGE.WEST, tangent: [[0, -1], [0, 1]] }
+    { dx: 0, dy: -1, bit: EDGE.NORTH, tangent: "horizontal" },
+    { dx: 1, dy: 0, bit: EDGE.EAST, tangent: "vertical" },
+    { dx: 0, dy: 1, bit: EDGE.SOUTH, tangent: "horizontal" },
+    { dx: -1, dy: 0, bit: EDGE.WEST, tangent: "vertical" }
 ];
 
 const indexOf = (x, y, width) => y * width + x;
@@ -19,54 +16,90 @@ function randomInt(random, min, max) {
     return Math.floor(random() * (max - min + 1)) + min;
 }
 
-// Finds connected stretches of the same cliff edge. A ramp run is
-// 2–8 tiles long along the cliff and remains exactly one tile wide.
-function findCliffRuns(edges, width, height) {
-    const groups = [];
+function shuffle(items, random) {
+    for (let i = items.length - 1; i > 0; i--) {
+        const j = Math.floor(random() * (i + 1));
+        [items[i], items[j]] = [items[j], items[i]];
+    }
+    return items;
+}
 
-    for (const edge of edges) {
-        const visited = new Set();
+// Mark river channels, lake water, and a four-tile safety margin.
+function createWaterBuffer(width, height, rivers) {
+    const blocked = new Uint8Array(width * height);
+    const water = new Uint8Array(width * height);
 
-        for (const start of edge.tiles) {
-            if (visited.has(start)) continue;
-
-            const queue = [start];
-            const group = [];
-            visited.add(start);
-
-            for (let read = 0; read < queue.length; read++) {
-                const tile = queue[read];
-                group.push(tile);
-                const x = tile % width;
-                const y = Math.floor(tile / width);
-
-                for (const [dx, dy] of edge.tangent) {
-                    const nx = x + dx;
-                    const ny = y + dy;
-                    if (nx < 0 || ny < 0 || nx >= width || ny >= height) continue;
-
-                    const next = indexOf(nx, ny, width);
-                    if (edge.tileSet.has(next) && !visited.has(next)) {
-                        visited.add(next);
-                        queue.push(next);
-                    }
-                }
-            }
-
-            if (group.length >= 2) groups.push({ ...edge, tiles: group });
+    if (rivers?.riverTiles) {
+        for (let i = 0; i < rivers.riverTiles.length; i++) {
+            if (rivers.riverTiles[i]) water[i] = 1;
         }
     }
 
-    return groups;
+    for (const lake of rivers?.lakes || []) {
+        for (const tile of lake.tiles || []) water[tile] = 1;
+    }
+
+    for (let tile = 0; tile < water.length; tile++) {
+        if (!water[tile]) continue;
+        const x = tile % width;
+        const y = Math.floor(tile / width);
+
+        for (let dy = -MIN_WATER_CLEARANCE; dy <= MIN_WATER_CLEARANCE; dy++) {
+            for (let dx = -MIN_WATER_CLEARANCE; dx <= MIN_WATER_CLEARANCE; dx++) {
+                const nx = x + dx;
+                const ny = y + dy;
+                if (nx < 0 || ny < 0 || nx >= width || ny >= height) continue;
+                blocked[indexOf(nx, ny, width)] = 1;
+            }
+        }
+    }
+
+    return blocked;
 }
 
-export function generateRamps({ width, height, elevation, random }) {
+// Convert edge tiles into contiguous straight cliff stretches.
+function makeSegments(edgeTiles, width, tangent) {
+    const ordered = edgeTiles.slice().sort((a, b) => {
+        const ax = a % width, ay = Math.floor(a / width);
+        const bx = b % width, by = Math.floor(b / width);
+        return tangent === "horizontal" ? ax - bx : ay - by;
+    });
+
+    const segments = [];
+    let current = [];
+
+    for (const tile of ordered) {
+        if (current.length) {
+            const previous = current[current.length - 1];
+            const sameLine = tangent === "horizontal"
+                ? Math.floor(previous / width) === Math.floor(tile / width)
+                : previous % width === tile % width;
+            const adjacent = tangent === "horizontal"
+                ? tile % width === previous % width + 1
+                : Math.floor(tile / width) === Math.floor(previous / width) + 1;
+
+            if (!sameLine || !adjacent) {
+                if (current.length >= 2) segments.push(current);
+                current = [];
+            }
+        }
+        current.push(tile);
+    }
+
+    if (current.length >= 2) segments.push(current);
+    return segments;
+}
+
+export function generateRamps({ width, height, elevation, rivers, random }) {
     const size = width * height;
-    // Each byte is a directional bitmask: N=1, E=2, S=4, W=8.
-    // The mask is stored on the higher-elevation tile only.
     const cliffTiles = new Uint8Array(size);
     const rampTiles = new Uint8Array(size);
+    const waterBuffer = createWaterBuffer(width, height, rivers);
     const edgeGroups = [];
+
+    // First calculate the complete cliff network. This gives us a real
+    // denominator before deciding how many cliff edges may become ramps.
+    let totalCliffEdges = 0;
 
     for (const direction of DIRECTIONS) {
         const byLowerLevel = new Map();
@@ -85,50 +118,63 @@ export function generateRamps({ width, height, elevation, random }) {
                 if (lowerLevel !== level - 1) continue;
 
                 cliffTiles[tile] |= direction.bit;
+                totalCliffEdges++;
 
-                if (!byLowerLevel.has(lowerLevel)) {
-                    byLowerLevel.set(lowerLevel, []);
-                }
+                if (!byLowerLevel.has(lowerLevel)) byLowerLevel.set(lowerLevel, []);
                 byLowerLevel.get(lowerLevel).push(tile);
             }
         }
 
         for (const [lowerLevel, tiles] of byLowerLevel) {
-            edgeGroups.push({
-                bit: direction.bit,
-                lowerLevel,
-                tangent: direction.tangent,
-                tiles,
-                tileSet: new Set(tiles)
-            });
+            edgeGroups.push({ bit: direction.bit, lowerLevel, tangent: direction.tangent, tiles });
         }
     }
 
-    const runs = findCliffRuns(edgeGroups, width, height);
+    // Maximum is a percentage of all directional cliff edges, not all map tiles.
+    const rampEdgeBudget = Math.floor(totalCliffEdges * MAX_RAMP_CLIFF_PERCENT / 100);
+    const segments = [];
 
-    for (const group of runs) {
-        // Pick separated short sections rather than turning an entire
-        // continuous cliff into one long ramp.
-        const ordered = group.tiles.slice().sort((a, b) => {
-            const ax = a % width, ay = Math.floor(a / width);
-            const bx = b % width, by = Math.floor(b / width);
-            return group.tangent[0][0] !== 0 ? ax - bx : ay - by;
-        });
-
-        let cursor = 0;
-        while (ordered.length - cursor >= 2) {
-            const remaining = ordered.length - cursor;
-            const runLength = randomInt(random, 2, Math.min(8, remaining));
-            for (let i = cursor; i < cursor + runLength; i++) {
-                rampTiles[ordered[i]] |= group.bit;
-                cliffTiles[ordered[i]] &= ~group.bit;
+    for (const group of edgeGroups) {
+        for (const tiles of makeSegments(group.tiles, width, group.tangent)) {
+            const safeTiles = tiles.filter(tile => !waterBuffer[tile]);
+            for (const safeSegment of makeSegments(safeTiles, width, group.tangent)) {
+                segments.push({ ...group, tiles: safeSegment });
             }
-            cursor += runLength;
-
-            if (ordered.length - cursor < 2) break;
-            cursor += randomInt(random, 4, 10);
         }
     }
 
-    return { cliffTiles, rampTiles };
+    // Randomize which eligible cliff stretches get the limited ramp allowance.
+    shuffle(segments, random);
+    let rampEdges = 0;
+
+    for (const segment of segments) {
+        if (rampEdges + 2 > rampEdgeBudget) break;
+
+        const tiles = segment.tiles;
+        const maxLength = Math.min(8, tiles.length, rampEdgeBudget - rampEdges);
+        if (maxLength < 2) continue;
+
+        const runLength = randomInt(random, 2, maxLength);
+        const start = randomInt(random, 0, tiles.length - runLength);
+
+        for (let i = start; i < start + runLength; i++) {
+            const tile = tiles[i];
+            rampTiles[tile] |= segment.bit;
+            cliffTiles[tile] &= ~segment.bit;
+            rampEdges++;
+        }
+    }
+
+    return {
+        cliffTiles,
+        rampTiles,
+        stats: {
+            totalCliffEdges,
+            rampEdges,
+            rampEdgeBudget,
+            rampPercent: totalCliffEdges ? rampEdges / totalCliffEdges * 100 : 0,
+            maxRampPercent: MAX_RAMP_CLIFF_PERCENT,
+            waterClearance: MIN_WATER_CLEARANCE
+        }
+    };
 }
