@@ -83,7 +83,6 @@ export function renderMap(world, container) {
             image.data[p + 2] = 185;
         }
     }
-    }
 
     context.putImageData(image, 0, 0);
 
