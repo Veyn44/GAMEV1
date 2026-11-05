@@ -1,5 +1,6 @@
 import { generateMountains } from "./mountaingenerator.js";
 import { generateRivers } from "./rivergenerator.js";
+import { generateRamps } from "./rampgenerator.js";
 
 function createRandom(seed) {
     let state = seed >>> 0;
@@ -49,6 +50,7 @@ export function generateWorld(config, overrides = {}) {
     });
 
     const rivers = generateRivers({ width, height, elevation, mountains, random });
+    const ramps = generateRamps({ width, height, elevation, random });
 
     return {
         width,
@@ -56,6 +58,8 @@ export function generateWorld(config, overrides = {}) {
         elevation,
         mountains,
         rivers,
+        cliffTiles: ramps.cliffTiles,
+        rampTiles: ramps.rampTiles,
         seed
     };
 }

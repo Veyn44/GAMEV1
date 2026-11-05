@@ -63,6 +63,16 @@ export function renderMap(world, container) {
         }
     }
 
+    if (world.rampTiles) {
+        for (let i = 0; i < world.rampTiles.length; i++) {
+            if (!world.rampTiles[i]) continue;
+            const p = i * 4;
+            image.data[p] = 132;
+            image.data[p + 1] = 65;
+            image.data[p + 2] = 185;
+        }
+    }
+
     context.putImageData(image, 0, 0);
 
     container.appendChild(canvas);
