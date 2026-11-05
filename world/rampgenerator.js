@@ -121,6 +121,7 @@ export function generateRamps({ width, height, elevation, random }) {
             const runLength = randomInt(random, 2, Math.min(8, remaining));
             for (let i = cursor; i < cursor + runLength; i++) {
                 rampTiles[ordered[i]] |= group.bit;
+                cliffTiles[ordered[i]] &= ~group.bit;
             }
             cursor += runLength;
 
