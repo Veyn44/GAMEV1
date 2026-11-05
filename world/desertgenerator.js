@@ -81,7 +81,6 @@ function buildWaterDistance(width, height, water, maxDistance) {
 
 function smoothNoiseProfile(random, length, minDepth, maxDepth, variation) {
     const values = new Float32Array(length);
-    const span = maxDepth - minDepth;
     const detailAmplitude = Math.min(4, variation * 0.2);
 
     // Randomly spaced control points prevent the border from repeating a
@@ -114,9 +113,7 @@ function smoothNoiseProfile(random, length, minDepth, maxDepth, variation) {
 }
 
 function createBorderWaves(random, length, minDepth, maxDepth, variation) {
-    return Array.from({ length: 4 }, () =>
-        smoothNoiseProfile(random, length, minDepth, maxDepth, variation)
-    );
+    return smoothNoiseProfile(random, length, minDepth, maxDepth, variation);
 }
 
 function getBorderDepth(position, profile) {
@@ -126,9 +123,9 @@ function getBorderDepth(position, profile) {
 function generateBorderDesert(width, height, elevation, water, random, options) {
     const { borderMinDepth, borderMaxDepth, borderVariation } = options;
     const waves = [
+        createBorderWaves(random, height, borderMinDepth, borderMaxDepth, borderVariation),
         createBorderWaves(random, height, borderMinDepth, borderMaxDepth, borderVariation)[0],
-        createBorderWaves(random, height, borderMinDepth, borderMaxDepth, borderVariation)[0],
-        createBorderWaves(random, width, borderMinDepth, borderMaxDepth, borderVariation)[0],
+        createBorderWaves(random, width, borderMinDepth, borderMaxDepth, borderVariation),
         createBorderWaves(random, width, borderMinDepth, borderMaxDepth, borderVariation)[0]
     ];
     const desert = new Uint8Array(width * height);
