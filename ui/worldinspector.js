@@ -178,7 +178,6 @@ export function openWorldInspector(world) {
             image.data[p + 2] = 185;
         }
     }
-    }
 
     terrainCtx.putImageData(image, 0, 0);
 
