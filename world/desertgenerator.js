@@ -80,8 +80,11 @@ function buildWaterDistance(width, height, water, maxDistance) {
 
 function createBorderProfile(random, length, depth, grain) {
     const values = new Float32Array(length);
-    const minSpacing = Math.round(34 - grain * 2.2);
-    const maxSpacing = Math.round(48 - grain * 2.8);
+
+    // Grain controls the scale of the landform: larger values combine
+    // nearby irregularities into longer, smoother arcs.
+    const minSpacing = Math.round(5 + grain * 1.1);
+    const maxSpacing = Math.round(10 + grain * 1.7);
     const amplitude = 7;
     const anchors = [{ position: 0, offset: (random() * 2 - 1) * amplitude }];
     let position = 0;
@@ -102,7 +105,10 @@ function createBorderProfile(random, length, depth, grain) {
         const rawT = b.position === a.position ? 0 : (i - a.position) / (b.position - a.position);
         const t = rawT * rawT * (3 - 2 * rawT);
         const offset = a.offset + (b.offset - a.offset) * t;
-        const fineDetail = (random() * 2 - 1) * (0.5 + grain * 0.12);
+
+        // Fine tile noise is deliberately restrained so it does not create
+        // isolated spikes between the larger, connected arcs.
+        const fineDetail = (random() * 2 - 1) * (0.25 + grain * 0.025);
         values[i] = Math.max(5, depth + offset + fineDetail);
     }
     return values;
@@ -127,13 +133,35 @@ function generateBorderDesert(width, height, elevation, water, random, options) 
             const tile = y * width + x;
             if (elevation[tile] !== 0 || water[tile]) continue;
 
-            const insideBorder =
-                x <= getBorderDepth(y, waves[0]) ||
-                width - 1 - x <= getBorderDepth(y, waves[1]) ||
-                y <= getBorderDepth(x, waves[2]) ||
-                height - 1 - y <= getBorderDepth(x, waves[3]);
+            const left = getBorderDepth(y, waves[0]);
+            const right = getBorderDepth(y, waves[1]);
+            const top = getBorderDepth(x, waves[2]);
+            const bottom = getBorderDepth(x, waves[3]);
 
-            if (insideBorder) desert[tile] = 1;
+            const inStraightBorder =
+                x <= left || width - 1 - x <= right ||
+                y <= top || height - 1 - y <= bottom;
+
+            // Replace the square overlap of two border strips with a rounded
+            // quarter-ellipse. The corner reaches 50% farther along both
+            // adjoining edges, creating a broad wraparound curve.
+            const cornerReach = borderDepth * 1.5;
+            const inTopLeft = x < cornerReach && y < cornerReach &&
+                (x * x) / (cornerReach * cornerReach) +
+                (y * y) / (cornerReach * cornerReach) <= 1;
+            const inTopRight = width - 1 - x < cornerReach && y < cornerReach &&
+                ((width - 1 - x) ** 2) / (cornerReach * cornerReach) +
+                (y * y) / (cornerReach * cornerReach) <= 1;
+            const inBottomLeft = x < cornerReach && height - 1 - y < cornerReach &&
+                (x * x) / (cornerReach * cornerReach) +
+                ((height - 1 - y) ** 2) / (cornerReach * cornerReach) <= 1;
+            const inBottomRight = width - 1 - x < cornerReach && height - 1 - y < cornerReach &&
+                ((width - 1 - x) ** 2) / (cornerReach * cornerReach) +
+                ((height - 1 - y) ** 2) / (cornerReach * cornerReach) <= 1;
+
+            if (inStraightBorder || inTopLeft || inTopRight || inBottomLeft || inBottomRight) {
+                desert[tile] = 1;
+            }
         }
     }
 
