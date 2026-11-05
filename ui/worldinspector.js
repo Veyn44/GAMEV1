@@ -140,6 +140,17 @@ export function openWorldInspector(world) {
         image.data[pixel + 3] = 255;
     }
 
+    // Desert biome overlay; water is rendered afterward and always stays visible.
+    if (world.desertTiles) {
+        for (let i = 0; i < world.desertTiles.length; i++) {
+            if (!world.desertTiles[i]) continue;
+            const p = i * 4;
+            image.data[p] = 211;
+            image.data[p + 1] = 181;
+            image.data[p + 2] = 112;
+        }
+    }
+
     if (world.rivers && world.rivers.riverTiles) {
         for (let i = 0; i < world.rivers.riverTiles.length; i++) {
             if (!world.rivers.riverTiles[i]) continue;
