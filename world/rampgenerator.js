@@ -1,6 +1,5 @@
 // Cliff edges are stored as directional bits on the higher tile.
-// N=1, E=2, S=4, W=8. Z4 is intentionally excluded: mountain peaks
-// are impassable and can never receive ramps.
+// N=1, E=2, S=4, W=8. Z4 peaks are impassable and excluded.
 const EDGE = { NORTH: 1, EAST: 2, SOUTH: 4, WEST: 8 };
 const WATER_CLEARANCE = 4;
 
@@ -29,10 +28,8 @@ function createWaterBuffer(width, height, rivers) {
     const blocked = new Uint8Array(width * height);
     const water = new Uint8Array(width * height);
 
-    if (rivers?.riverTiles) {
-        for (let i = 0; i < rivers.riverTiles.length; i++) {
-            if (rivers.riverTiles[i]) water[i] = 1;
-        }
+    for (let i = 0; i < (rivers?.riverTiles?.length || 0); i++) {
+        if (rivers.riverTiles[i]) water[i] = 1;
     }
     for (const lake of rivers?.lakes || []) {
         for (const tile of lake.tiles || []) {
@@ -55,14 +52,13 @@ function createWaterBuffer(width, height, rivers) {
     return blocked;
 }
 
-// Build straight, orthogonally contiguous cliff runs. A corner starts a
-// new run rather than introducing a diagonal connection between tiles.
+// A run is always a straight, cardinally adjacent sequence. Turns create
+// separate runs, so ramps can never jump diagonally around a cliff corner.
 function collectStraightRuns(tiles, width, axis) {
     const sorted = tiles.slice().sort((a, b) => {
         const ax = a % width, ay = Math.floor(a / width);
         const bx = b % width, by = Math.floor(b / width);
-        if (axis === "h") return ay - by || ax - bx;
-        return ax - bx || ay - by;
+        return axis === "h" ? ay - by || ax - bx : ax - bx || ay - by;
     });
 
     const runs = [];
@@ -87,36 +83,61 @@ function collectStraightRuns(tiles, width, axis) {
     return runs;
 }
 
-function tooClose(candidate, placed, width, minDistanceSquared) {
-    for (const tile of candidate) {
-        const x = tile % width, y = Math.floor(tile / width);
-        for (const other of placed) {
-            const ox = other % width, oy = Math.floor(other / width);
-            const dx = x - ox, dy = y - oy;
-            if (dx * dx + dy * dy < minDistanceSquared) return true;
+function nearestMountain(tile, width, mountains) {
+    if (!mountains?.length) return 0;
+    const x = tile % width;
+    const y = Math.floor(tile / width);
+    let best = 0;
+    let bestDistance = Infinity;
+
+    for (let i = 0; i < mountains.length; i++) {
+        const mountain = mountains[i];
+        const dx = x - mountain.x;
+        const dy = y - mountain.y;
+        const distance = dx * dx + dy * dy;
+        if (distance < bestDistance) {
+            bestDistance = distance;
+            best = i;
         }
     }
-    return false;
+    return best;
+}
+
+function rampCenter(tiles, width) {
+    const middle = tiles[Math.floor(tiles.length / 2)];
+    return { x: middle % width, y: Math.floor(middle / width) };
+}
+
+function isTooClose(candidate, placed, width, minDistanceSquared) {
+    const center = rampCenter(candidate, width);
+    return placed.some(item => {
+        if (item.level !== candidate.level) return false;
+        const dx = center.x - item.x;
+        const dy = center.y - item.y;
+        return dx * dx + dy * dy < minDistanceSquared;
+    });
 }
 
 export function generateRamps({
     width,
     height,
     elevation,
+    mountains = [],
     rivers,
     random,
     rampSpacing = 50,
-    rampMaxLength = 8
+    rampMaxLength = 8,
+    rampsPerPeak = 1
 }) {
     const size = width * height;
     const cliffTiles = new Uint8Array(size);
     const rampTiles = new Uint8Array(size);
     const waterBuffer = createWaterBuffer(width, height, rivers);
     const cliffRuns = [];
-    let totalCliffTiles = 0;
+    let totalCliffEdges = 0;
 
-    // Detect cliff edges only across cardinal neighbors and only where
-    // the elevation difference is exactly one. Z4 is never a ramp/cliff tile.
+    // A cliff belongs to the higher tile only. We compare cardinal neighbors
+    // and record the edge direction; no diagonal neighbor can create a cliff.
     for (const direction of DIRECTIONS) {
         const edgeTiles = [];
         for (let y = 0; y < height; y++) {
@@ -125,62 +146,114 @@ export function generateRamps({
                 const level = elevation[tile];
                 if (level < 1 || level >= 4) continue;
 
-                const nx = x + direction.dx, ny = y + direction.dy;
+                const nx = x + direction.dx;
+                const ny = y + direction.dy;
                 if (nx < 0 || ny < 0 || nx >= width || ny >= height) continue;
-                const neighborLevel = elevation[indexOf(nx, ny, width)];
-                if (neighborLevel !== level - 1) continue;
+
+                const lowerLevel = elevation[indexOf(nx, ny, width)];
+                if (lowerLevel !== level - 1) continue;
 
                 cliffTiles[tile] |= direction.bit;
                 edgeTiles.push(tile);
-                totalCliffTiles++;
+                totalCliffEdges++;
             }
         }
 
-        cliffRuns.push(...collectStraightRuns(edgeTiles, width, direction.axis).map(tiles => ({ tiles, bit: direction.bit })));
+        for (const run of collectStraightRuns(edgeTiles, width, direction.axis)) {
+            const safeTiles = [];
+            for (const tile of run) {
+                if (waterBuffer[tile]) {
+                    if (safeTiles.length >= 2) {
+                        cliffRuns.push({ tiles: safeTiles.slice(), bit: direction.bit });
+                    }
+                    safeTiles.length = 0;
+                } else {
+                    safeTiles.push(tile);
+                }
+            }
+            if (safeTiles.length >= 2) {
+                cliffRuns.push({ tiles: safeTiles, bit: direction.bit });
+            }
+        }
     }
 
-    // Ramp candidates must consist entirely of cliff tiles and stay outside
-    // the four-tile river/lake buffer.
-    const candidates = [];
+    // Associate each straight cliff segment with its nearest mountain and
+    // elevation transition. Z4->Z3 is intentionally never considered.
+    const groups = new Map();
     for (const run of cliffRuns) {
-        const safeRun = [];
-        for (const tile of run.tiles) {
-            if (waterBuffer[tile]) {
-                if (safeRun.length >= 2) candidates.push({ tiles: safeRun.slice(), bit: run.bit });
-                safeRun.length = 0;
-            } else {
-                safeRun.push(tile);
-            }
-        }
-        if (safeRun.length >= 2) candidates.push({ tiles: safeRun, bit: run.bit });
+        const level = elevation[run.tiles[0]];
+        const mountainIndex = nearestMountain(run.tiles[Math.floor(run.tiles.length / 2)], width, mountains);
+        const key = `${mountainIndex}:${level}`;
+        if (!groups.has(key)) groups.set(key, []);
+        groups.get(key).push({ ...run, level, mountainIndex });
     }
 
-    shuffle(candidates, random);
-    const placedRampTiles = [];
-    const minDistanceSquared = rampSpacing * rampSpacing;
-    let rampCount = 0;
+    const placed = [];
+    const rampStatsByPeak = mountains.map((_, index) => ({
+        mountain: index,
+        z3ToZ2: 0,
+        z2ToZ1: 0,
+        z1ToZ0: 0
+    }));
+    const quota = Math.max(1, Math.floor(rampsPerPeak));
+    const minDistanceSquared = Math.max(0, rampSpacing) ** 2;
 
-    for (const run of candidates) {
-        const maxLength = Math.min(rampMaxLength, run.tiles.length);
-        if (maxLength < 2) continue;
+    // Every mountain gets up to the requested number of ramps on each
+    // playable transition. Water clearance and spacing are respected.
+    for (let mountainIndex = 0; mountainIndex < Math.max(1, mountains.length); mountainIndex++) {
+        for (const level of [3, 2, 1]) {
+            const key = `${mountainIndex}:${level}`;
+            const candidates = shuffle((groups.get(key) || []).slice(), random)
+                .sort((a, b) => b.tiles.length - a.tiles.length);
+            let created = 0;
 
-        // Try a handful of random positions/lengths in this run. If all
-        // conflict with an existing ramp's spacing, leave this cliff intact.
-        for (let attempt = 0; attempt < 8; attempt++) {
-            const length = randomInt(random, 2, maxLength);
-            const start = randomInt(random, 0, run.tiles.length - length);
-            const candidate = run.tiles.slice(start, start + length);
-            if (tooClose(candidate, placedRampTiles, width, minDistanceSquared)) continue;
+            for (const run of candidates) {
+                if (created >= quota) break;
+                const maxLength = Math.min(rampMaxLength, run.tiles.length);
+                if (maxLength < 2) continue;
 
-            const directionBit = run.bit;
+                // Try longer lengths first, but vary the chosen length and
+                // position. This makes the 2..20 slider meaningful.
+                const lengths = [];
+                for (let length = maxLength; length >= 2; length--) lengths.push(length);
+                shuffle(lengths, random);
 
-            for (const tile of candidate) {
-                rampTiles[tile] |= directionBit;
-                cliffTiles[tile] &= ~directionBit;
-                placedRampTiles.push(tile);
-                rampCount++;
+                let selected = null;
+                for (const length of lengths) {
+                    const startOptions = [];
+                    for (let start = 0; start <= run.tiles.length - length; start++) startOptions.push(start);
+                    shuffle(startOptions, random);
+
+                    for (const start of startOptions) {
+                        const tiles = run.tiles.slice(start, start + length);
+                        const center = rampCenter(tiles, width);
+                        if (placed.some(item => {
+                            if (item.level !== level) return false;
+                            const dx = center.x - item.x, dy = center.y - item.y;
+                            return dx * dx + dy * dy < minDistanceSquared;
+                        })) continue;
+                        selected = tiles;
+                        break;
+                    }
+                    if (selected) break;
+                }
+
+                if (!selected) continue;
+                for (const tile of selected) {
+                    rampTiles[tile] |= run.bit;
+                    cliffTiles[tile] &= ~run.bit;
+                }
+                const center = rampCenter(selected, width);
+                placed.push({ ...center, level, mountainIndex, length: selected.length });
+                created++;
             }
-            break;
+
+            const stats = rampStatsByPeak[mountainIndex];
+            if (stats) {
+                if (level === 3) stats.z3ToZ2 = created;
+                if (level === 2) stats.z2ToZ1 = created;
+                if (level === 1) stats.z1ToZ0 = created;
+            }
         }
     }
 
@@ -191,12 +264,15 @@ export function generateRamps({
         cliffTiles,
         rampTiles,
         stats: {
-            totalCliffTiles,
+            totalCliffEdges,
             remainingCliffTiles,
-            rampTiles: rampCount,
+            rampTiles: placed.reduce((sum, item) => sum + item.length, 0),
+            rampCount: placed.length,
             rampSpacing,
             rampMaxLength,
-            waterClearance: WATER_CLEARANCE
+            rampsPerPeak: quota,
+            waterClearance: WATER_CLEARANCE,
+            rampStatsByPeak
         }
     };
 }

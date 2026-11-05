@@ -51,9 +51,10 @@ export function generateWorld(config, overrides = {}) {
 
     const rivers = generateRivers({ width, height, elevation, mountains, random });
     const ramps = generateRamps({
-        width, height, elevation, rivers, random,
+        width, height, elevation, mountains, rivers, random,
         rampSpacing: overrides.rampSpacing ?? 50,
-        rampMaxLength: overrides.rampMaxLength ?? 8
+        rampMaxLength: overrides.rampMaxLength ?? 8,
+        rampsPerPeak: overrides.rampsPerPeak ?? 1
     });
 
     return {

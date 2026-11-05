@@ -50,6 +50,13 @@ export function initializeGenerator(config) {
             value: 8,
             min: 2,
             max: 20
+        },
+        {
+            key: "rampsPerPeak",
+            label: "Ramps per mountain / elevation level",
+            value: 1,
+            min: 1,
+            max: 4
         }
     ];
 
@@ -202,6 +209,7 @@ export function initializeGenerator(config) {
             minimumDistance: values.minimumDistance,
             rampSpacing: values.rampSpacing,
             rampMaxLength: values.rampMaxLength,
+            rampsPerPeak: values.rampsPerPeak,
             seed: seed
         });
 
