@@ -158,6 +158,16 @@ export function openWorldInspector(world) {
         }
     }
 
+    if (world.rampTiles) {
+        for (let i = 0; i < world.rampTiles.length; i++) {
+            if (!world.rampTiles[i]) continue;
+            const p = i * 4;
+            image.data[p] = 132;
+            image.data[p + 1] = 65;
+            image.data[p + 2] = 185;
+        }
+    }
+
     terrainCtx.putImageData(image, 0, 0);
 
     // Initial camera position and zoom.
@@ -401,11 +411,15 @@ export function openWorldInspector(world) {
 
         selectedTile = tile;
 
-        const level = world.elevation[tile.y * width + tile.x];
+        const tileIndex = tile.y * width + tile.x;
+        const level = world.elevation[tileIndex];
+        const rampMask = world.rampTiles?.[tileIndex] ?? 0;
+        const cliffMask = world.cliffTiles?.[tileIndex] ?? 0;
+        const status = rampMask ? " | RAMP" : cliffMask ? " | CLIFF" : "";
 
         tilePanel.style.display = "block";
         tilePanel.textContent =
-            `X: ${tile.x} | Y: ${tile.y} | Elevation: Z${level}`;
+            `X: ${tile.x} | Y: ${tile.y} | Elevation: Z${level}${status}`;
 
         draw();
     }
