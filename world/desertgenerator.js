@@ -148,7 +148,7 @@ function generateDryZ1Patches(width, height, elevation, waterDistance, random, o
     }
 
     const desert = new Uint8Array(size);
-    if (candidates.length < minimumPatchSize) return desert;
+    if (candidates.length < minimumPatchSize) return { desert, patchCount: 0 };
 
     // Place separate, bounded ellipses instead of converting entire connected
     // dry regions. Each patch stays recognizably oval even on a large Z1 shelf.
@@ -195,7 +195,7 @@ function generateDryZ1Patches(width, height, elevation, waterDistance, random, o
         created++;
     }
 
-    return desert;
+    return { desert, patchCount: created };
 }
 
 export function generateDesert({
@@ -216,9 +216,10 @@ export function generateDesert({
     const desertTiles = generateBorderDesert(
         width, height, elevation, water, random, settings
     );
-    const innerPatches = generateDryZ1Patches(
+    const innerResult = generateDryZ1Patches(
         width, height, elevation, waterDistance, random, settings
     );
+    const innerPatches = innerResult.desert;
 
     let borderTileCount = 0;
     let innerTileCount = 0;
@@ -241,7 +242,7 @@ export function generateDesert({
             borderMaxDepth: settings.borderMaxDepth,
             borderVariation: settings.borderVariation,
             waterRadius: settings.waterRadius,
-            innerPatchCount: innerTileCount > 0 ? 1 : 0,
+            innerPatchCount: innerResult.patchCount,
             minimumPatchSize: settings.minimumPatchSize
         }
     };
