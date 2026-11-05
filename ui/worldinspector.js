@@ -438,10 +438,11 @@ export function openWorldInspector(world) {
         const rampMask = world.rampTiles?.[tileIndex] ?? 0;
         const cliffMask = world.cliffTiles?.[tileIndex] ?? 0;
         const status = rampMask ? " | RAMP" : cliffMask ? " | CLIFF" : "";
+        const biome = world.desertTiles?.[tileIndex] ? " | DESERT" : "";
 
         tilePanel.style.display = "block";
         tilePanel.textContent =
-            `X: ${tile.x} | Y: ${tile.y} | Elevation: Z${level}${status}`;
+            `X: ${tile.x} | Y: ${tile.y} | Elevation: Z${level}${status}${biome}`;
 
         draw();
     }
