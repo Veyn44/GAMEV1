@@ -2,6 +2,7 @@
 // N=1, E=2, S=4, W=8. Z4 peaks are impassable and excluded.
 const EDGE = { NORTH: 1, EAST: 2, SOUTH: 4, WEST: 8 };
 const WATER_CLEARANCE = 4;
+const MIN_RAMP_LENGTH = 4;
 
 const DIRECTIONS = [
     { dx: 0, dy: -1, bit: EDGE.NORTH, axis: "h" },
@@ -210,12 +211,12 @@ export function generateRamps({
             for (const run of candidates) {
                 if (created >= quota) break;
                 const maxLength = Math.min(rampMaxLength, run.tiles.length);
-                if (maxLength < 2) continue;
+                if (maxLength < MIN_RAMP_LENGTH) continue;
 
-                // Try longer lengths first, but vary the chosen length and
-                // position. This makes the 2..20 slider meaningful.
+                // A natural ramp must be long enough to be a usable passage.
+                // The slider controls only its maximum length; 4 tiles is the hard minimum.
                 const lengths = [];
-                for (let length = maxLength; length >= 2; length--) lengths.push(length);
+                for (let length = maxLength; length >= MIN_RAMP_LENGTH; length--) lengths.push(length);
                 shuffle(lengths, random);
 
                 let selected = null;
@@ -269,6 +270,7 @@ export function generateRamps({
             rampTiles: placed.reduce((sum, item) => sum + item.length, 0),
             rampCount: placed.length,
             rampSpacing,
+            minRampLength: MIN_RAMP_LENGTH,
             rampMaxLength,
             rampsPerPeak: quota,
             waterClearance: WATER_CLEARANCE,
