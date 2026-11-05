@@ -1,13 +1,14 @@
-// Directional cliff-edge bits are stored on the higher-elevation tile.
+// Cliff edges are stored as directional bits on the higher tile.
+// N=1, E=2, S=4, W=8. Z4 is intentionally excluded: mountain peaks
+// are impassable and can never receive ramps.
 const EDGE = { NORTH: 1, EAST: 2, SOUTH: 4, WEST: 8 };
-const MAX_RAMP_CLIFF_PERCENT = 10;
-const MIN_WATER_CLEARANCE = 4;
+const WATER_CLEARANCE = 4;
 
 const DIRECTIONS = [
-    { dx: 0, dy: -1, bit: EDGE.NORTH, tangent: "horizontal" },
-    { dx: 1, dy: 0, bit: EDGE.EAST, tangent: "vertical" },
-    { dx: 0, dy: 1, bit: EDGE.SOUTH, tangent: "horizontal" },
-    { dx: -1, dy: 0, bit: EDGE.WEST, tangent: "vertical" }
+    { dx: 0, dy: -1, bit: EDGE.NORTH, axis: "h" },
+    { dx: 1, dy: 0, bit: EDGE.EAST, axis: "v" },
+    { dx: 0, dy: 1, bit: EDGE.SOUTH, axis: "h" },
+    { dx: -1, dy: 0, bit: EDGE.WEST, axis: "v" }
 ];
 
 const indexOf = (x, y, width) => y * width + x;
@@ -24,7 +25,6 @@ function shuffle(items, random) {
     return items;
 }
 
-// Mark river channels, lake water, and a four-tile safety margin.
 function createWaterBuffer(width, height, rivers) {
     const blocked = new Uint8Array(width * height);
     const water = new Uint8Array(width * height);
@@ -34,147 +34,184 @@ function createWaterBuffer(width, height, rivers) {
             if (rivers.riverTiles[i]) water[i] = 1;
         }
     }
-
     for (const lake of rivers?.lakes || []) {
-        for (const tile of lake.tiles || []) water[tile] = 1;
+        for (const tile of lake.tiles || []) {
+            if (tile >= 0 && tile < water.length) water[tile] = 1;
+        }
     }
 
     for (let tile = 0; tile < water.length; tile++) {
         if (!water[tile]) continue;
         const x = tile % width;
         const y = Math.floor(tile / width);
-
-        for (let dy = -MIN_WATER_CLEARANCE; dy <= MIN_WATER_CLEARANCE; dy++) {
-            for (let dx = -MIN_WATER_CLEARANCE; dx <= MIN_WATER_CLEARANCE; dx++) {
-                const nx = x + dx;
-                const ny = y + dy;
+        for (let dy = -WATER_CLEARANCE; dy <= WATER_CLEARANCE; dy++) {
+            for (let dx = -WATER_CLEARANCE; dx <= WATER_CLEARANCE; dx++) {
+                const nx = x + dx, ny = y + dy;
                 if (nx < 0 || ny < 0 || nx >= width || ny >= height) continue;
                 blocked[indexOf(nx, ny, width)] = 1;
             }
         }
     }
-
     return blocked;
 }
 
-// Convert edge tiles into contiguous straight cliff stretches.
-function makeSegments(edgeTiles, width, tangent) {
-    const ordered = edgeTiles.slice().sort((a, b) => {
+// Build straight, orthogonally contiguous cliff runs. A corner starts a
+// new run rather than introducing a diagonal connection between tiles.
+function collectStraightRuns(tiles, width, axis) {
+    const sorted = tiles.slice().sort((a, b) => {
         const ax = a % width, ay = Math.floor(a / width);
         const bx = b % width, by = Math.floor(b / width);
-        return tangent === "horizontal" ? ax - bx : ay - by;
+        if (axis === "h") return ay - by || ax - bx;
+        return ax - bx || ay - by;
     });
 
-    const segments = [];
-    let current = [];
-
-    for (const tile of ordered) {
-        if (current.length) {
-            const previous = current[current.length - 1];
-            const sameLine = tangent === "horizontal"
-                ? Math.floor(previous / width) === Math.floor(tile / width)
-                : previous % width === tile % width;
-            const adjacent = tangent === "horizontal"
-                ? tile % width === previous % width + 1
-                : Math.floor(tile / width) === Math.floor(previous / width) + 1;
-
+    const runs = [];
+    let run = [];
+    for (const tile of sorted) {
+        if (run.length) {
+            const prev = run[run.length - 1];
+            const sameLine = axis === "h"
+                ? Math.floor(prev / width) === Math.floor(tile / width)
+                : prev % width === tile % width;
+            const adjacent = axis === "h"
+                ? tile % width === prev % width + 1
+                : Math.floor(tile / width) === Math.floor(prev / width) + 1;
             if (!sameLine || !adjacent) {
-                if (current.length >= 2) segments.push(current);
-                current = [];
+                if (run.length >= 2) runs.push(run);
+                run = [];
             }
         }
-        current.push(tile);
+        run.push(tile);
     }
-
-    if (current.length >= 2) segments.push(current);
-    return segments;
+    if (run.length >= 2) runs.push(run);
+    return runs;
 }
 
-export function generateRamps({ width, height, elevation, rivers, random }) {
+function tooClose(candidate, placed, width, minDistanceSquared) {
+    for (const tile of candidate) {
+        const x = tile % width, y = Math.floor(tile / width);
+        for (const other of placed) {
+            const ox = other % width, oy = Math.floor(other / width);
+            const dx = x - ox, dy = y - oy;
+            if (dx * dx + dy * dy < minDistanceSquared) return true;
+        }
+    }
+    return false;
+}
+
+export function generateRamps({
+    width,
+    height,
+    elevation,
+    rivers,
+    random,
+    rampSpacing = 50,
+    rampMaxLength = 8
+}) {
     const size = width * height;
     const cliffTiles = new Uint8Array(size);
     const rampTiles = new Uint8Array(size);
     const waterBuffer = createWaterBuffer(width, height, rivers);
-    const edgeGroups = [];
+    const cliffRuns = [];
+    let totalCliffTiles = 0;
 
-    // First calculate the complete cliff network. This gives us a real
-    // denominator before deciding how many cliff edges may become ramps.
-    let totalCliffEdges = 0;
-
+    // Detect cliff edges only across cardinal neighbors and only where
+    // the elevation difference is exactly one. Z4 is never a ramp/cliff tile.
     for (const direction of DIRECTIONS) {
-        const byLowerLevel = new Map();
-
+        const edgeTiles = [];
         for (let y = 0; y < height; y++) {
             for (let x = 0; x < width; x++) {
                 const tile = indexOf(x, y, width);
                 const level = elevation[tile];
-                if (level === 0) continue;
+                if (level < 1 || level >= 4) continue;
 
-                const nx = x + direction.dx;
-                const ny = y + direction.dy;
+                const nx = x + direction.dx, ny = y + direction.dy;
                 if (nx < 0 || ny < 0 || nx >= width || ny >= height) continue;
-
-                const lowerLevel = elevation[indexOf(nx, ny, width)];
-                if (lowerLevel !== level - 1) continue;
+                const neighborLevel = elevation[indexOf(nx, ny, width)];
+                if (neighborLevel !== level - 1) continue;
 
                 cliffTiles[tile] |= direction.bit;
-                totalCliffEdges++;
-
-                if (!byLowerLevel.has(lowerLevel)) byLowerLevel.set(lowerLevel, []);
-                byLowerLevel.get(lowerLevel).push(tile);
+                edgeTiles.push(tile);
+                totalCliffTiles++;
             }
         }
 
-        for (const [lowerLevel, tiles] of byLowerLevel) {
-            edgeGroups.push({ bit: direction.bit, lowerLevel, tangent: direction.tangent, tiles });
-        }
+        cliffRuns.push(...collectStraightRuns(edgeTiles, width, direction.axis));
     }
 
-    // Maximum is a percentage of all directional cliff edges, not all map tiles.
-    const rampEdgeBudget = Math.floor(totalCliffEdges * MAX_RAMP_CLIFF_PERCENT / 100);
-    const segments = [];
-
-    for (const group of edgeGroups) {
-        for (const tiles of makeSegments(group.tiles, width, group.tangent)) {
-            const safeTiles = tiles.filter(tile => !waterBuffer[tile]);
-            for (const safeSegment of makeSegments(safeTiles, width, group.tangent)) {
-                segments.push({ ...group, tiles: safeSegment });
+    // Ramp candidates must consist entirely of cliff tiles and stay outside
+    // the four-tile river/lake buffer.
+    const candidates = [];
+    for (const run of cliffRuns) {
+        const safeRun = [];
+        for (const tile of run) {
+            if (waterBuffer[tile]) {
+                if (safeRun.length >= 2) candidates.push(safeRun.slice());
+                safeRun.length = 0;
+            } else {
+                safeRun.push(tile);
             }
         }
+        if (safeRun.length >= 2) candidates.push(safeRun);
     }
 
-    // Randomize which eligible cliff stretches get the limited ramp allowance.
-    shuffle(segments, random);
-    let rampEdges = 0;
+    shuffle(candidates, random);
+    const placedRampTiles = [];
+    const minDistanceSquared = rampSpacing * rampSpacing;
+    let rampCount = 0;
 
-    for (const segment of segments) {
-        if (rampEdges + 2 > rampEdgeBudget) break;
-
-        const tiles = segment.tiles;
-        const maxLength = Math.min(8, tiles.length, rampEdgeBudget - rampEdges);
+    for (const run of candidates) {
+        const maxLength = Math.min(rampMaxLength, run.length);
         if (maxLength < 2) continue;
 
-        const runLength = randomInt(random, 2, maxLength);
-        const start = randomInt(random, 0, tiles.length - runLength);
+        // Try a handful of random positions/lengths in this run. If all
+        // conflict with an existing ramp's spacing, leave this cliff intact.
+        for (let attempt = 0; attempt < 8; attempt++) {
+            const length = randomInt(random, 2, maxLength);
+            const start = randomInt(random, 0, run.length - length);
+            const candidate = run.slice(start, start + length);
+            if (tooClose(candidate, placedRampTiles, width, minDistanceSquared)) continue;
 
-        for (let i = start; i < start + runLength; i++) {
-            const tile = tiles[i];
-            rampTiles[tile] |= segment.bit;
-            cliffTiles[tile] &= ~segment.bit;
-            rampEdges++;
+            // The run is straight, so all its tiles share one cliff direction.
+            const first = candidate[0];
+            const bit = cliffTiles[first] & (EDGE.NORTH | EDGE.EAST | EDGE.SOUTH | EDGE.WEST);
+            // Determine the shared direction from adjacent terrain elevation.
+            const x = first % width, y = Math.floor(first / width);
+            let directionBit = 0;
+            for (const direction of DIRECTIONS) {
+                if (!(bit & direction.bit)) continue;
+                const nx = x + direction.dx, ny = y + direction.dy;
+                if (nx >= 0 && ny >= 0 && nx < width && ny < height &&
+                    elevation[indexOf(nx, ny, width)] === elevation[first] - 1) {
+                    directionBit = direction.bit;
+                    break;
+                }
+            }
+            if (!directionBit) continue;
+
+            for (const tile of candidate) {
+                rampTiles[tile] |= directionBit;
+                cliffTiles[tile] &= ~directionBit;
+                placedRampTiles.push(tile);
+                rampCount++;
+            }
+            break;
         }
     }
+
+    let remainingCliffTiles = 0;
+    for (const mask of cliffTiles) if (mask) remainingCliffTiles++;
 
     return {
         cliffTiles,
         rampTiles,
         stats: {
-            totalCliffEdges,
-            rampEdges,
-            rampEdgeBudget,
-            rampPercent: totalCliffEdges ? rampEdges / totalCliffEdges * 100 : 0,
-            maxRampPercent: MAX_RAMP_CLIFF_PERCENT,
-            waterClearance: MIN_WATER_CLEARANCE
+            totalCliffTiles,
+            remainingCliffTiles,
+            rampTiles: rampCount,
+            rampSpacing,
+            rampMaxLength,
+            waterClearance: WATER_CLEARANCE
         }
     };
 }
