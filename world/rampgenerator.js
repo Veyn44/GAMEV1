@@ -136,7 +136,7 @@ export function generateRamps({
             }
         }
 
-        cliffRuns.push(...collectStraightRuns(edgeTiles, width, direction.axis));
+        cliffRuns.push(...collectStraightRuns(edgeTiles, width, direction.axis).map(tiles => ({ tiles, bit: direction.bit })));
     }
 
     // Ramp candidates must consist entirely of cliff tiles and stay outside
@@ -144,15 +144,15 @@ export function generateRamps({
     const candidates = [];
     for (const run of cliffRuns) {
         const safeRun = [];
-        for (const tile of run) {
+        for (const tile of run.tiles) {
             if (waterBuffer[tile]) {
-                if (safeRun.length >= 2) candidates.push(safeRun.slice());
+                if (safeRun.length >= 2) candidates.push({ tiles: safeRun.slice(), bit: run.bit });
                 safeRun.length = 0;
             } else {
                 safeRun.push(tile);
             }
         }
-        if (safeRun.length >= 2) candidates.push(safeRun);
+        if (safeRun.length >= 2) candidates.push({ tiles: safeRun, bit: run.bit });
     }
 
     shuffle(candidates, random);
@@ -161,33 +161,18 @@ export function generateRamps({
     let rampCount = 0;
 
     for (const run of candidates) {
-        const maxLength = Math.min(rampMaxLength, run.length);
+        const maxLength = Math.min(rampMaxLength, run.tiles.length);
         if (maxLength < 2) continue;
 
         // Try a handful of random positions/lengths in this run. If all
         // conflict with an existing ramp's spacing, leave this cliff intact.
         for (let attempt = 0; attempt < 8; attempt++) {
             const length = randomInt(random, 2, maxLength);
-            const start = randomInt(random, 0, run.length - length);
-            const candidate = run.slice(start, start + length);
+            const start = randomInt(random, 0, run.tiles.length - length);
+            const candidate = run.tiles.slice(start, start + length);
             if (tooClose(candidate, placedRampTiles, width, minDistanceSquared)) continue;
 
-            // The run is straight, so all its tiles share one cliff direction.
-            const first = candidate[0];
-            const bit = cliffTiles[first] & (EDGE.NORTH | EDGE.EAST | EDGE.SOUTH | EDGE.WEST);
-            // Determine the shared direction from adjacent terrain elevation.
-            const x = first % width, y = Math.floor(first / width);
-            let directionBit = 0;
-            for (const direction of DIRECTIONS) {
-                if (!(bit & direction.bit)) continue;
-                const nx = x + direction.dx, ny = y + direction.dy;
-                if (nx >= 0 && ny >= 0 && nx < width && ny < height &&
-                    elevation[indexOf(nx, ny, width)] === elevation[first] - 1) {
-                    directionBit = direction.bit;
-                    break;
-                }
-            }
-            if (!directionBit) continue;
+            const directionBit = run.bit;
 
             for (const tile of candidate) {
                 rampTiles[tile] |= directionBit;
