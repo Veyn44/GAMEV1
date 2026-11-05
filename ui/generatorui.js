@@ -48,7 +48,7 @@ export function initializeGenerator(config) {
             key: "rampMaxLength",
             label: "Maximum ramp length",
             value: 8,
-            min: 2,
+            min: 4,
             max: 20
         },
         {
