@@ -1,7 +1,6 @@
 const DEFAULTS = {
-    borderMinDepth: 20,
-    borderMaxDepth: 40,
-    borderVariation: 20,
+    borderDepth: 30,
+    borderGrain: 5,
     waterRadius: 50,
     minimumPatchSize: 50,
     patchMinRadiusX: 6,
@@ -79,41 +78,34 @@ function buildWaterDistance(width, height, water, maxDistance) {
     return distance;
 }
 
-function smoothNoiseProfile(random, length, minDepth, maxDepth, variation) {
+function createBorderProfile(random, length, depth, grain) {
     const values = new Float32Array(length);
-    const detailAmplitude = Math.min(4, variation * 0.2);
-
-    // Randomly spaced control points prevent the border from repeating a
-    // regular wave pattern. Smooth interpolation keeps the coastline organic.
-    const anchors = [{ position: 0, depth: randomInt(random, minDepth, maxDepth) }];
+    const minSpacing = Math.round(34 - grain * 2.2);
+    const maxSpacing = Math.round(48 - grain * 2.8);
+    const amplitude = 7;
+    const anchors = [{ position: 0, offset: (random() * 2 - 1) * amplitude }];
     let position = 0;
+
     while (position < length - 1) {
-        position = Math.min(length - 1, position + randomInt(random, 7, 16));
-        anchors.push({ position, depth: randomInt(random, minDepth, maxDepth) });
+        position = Math.min(
+            length - 1,
+            position + randomInt(random, minSpacing, Math.max(minSpacing, maxSpacing))
+        );
+        anchors.push({ position, offset: (random() * 2 - 1) * amplitude });
     }
 
     let segment = 0;
     for (let i = 0; i < length; i++) {
-        while (segment < anchors.length - 2 && i > anchors[segment + 1].position) {
-            segment++;
-        }
-
+        while (segment < anchors.length - 2 && i > anchors[segment + 1].position) segment++;
         const a = anchors[segment];
         const b = anchors[segment + 1];
         const rawT = b.position === a.position ? 0 : (i - a.position) / (b.position - a.position);
         const t = rawT * rawT * (3 - 2 * rawT);
-        const broadDepth = a.depth + (b.depth - a.depth) * t;
-
-        // A second, finer irregular layer breaks up long smooth stretches.
-        const detail = (random() * 2 - 1) * detailAmplitude;
-        values[i] = Math.max(minDepth, Math.min(maxDepth, broadDepth + detail));
+        const offset = a.offset + (b.offset - a.offset) * t;
+        const fineDetail = (random() * 2 - 1) * (0.5 + grain * 0.12);
+        values[i] = Math.max(5, depth + offset + fineDetail);
     }
-
     return values;
-}
-
-function createBorderWaves(random, length, minDepth, maxDepth, variation) {
-    return smoothNoiseProfile(random, length, minDepth, maxDepth, variation);
 }
 
 function getBorderDepth(position, profile) {
@@ -121,12 +113,12 @@ function getBorderDepth(position, profile) {
 }
 
 function generateBorderDesert(width, height, elevation, water, random, options) {
-    const { borderMinDepth, borderMaxDepth, borderVariation } = options;
+    const { borderDepth, borderGrain } = options;
     const waves = [
-        createBorderWaves(random, height, borderMinDepth, borderMaxDepth, borderVariation),
-        createBorderWaves(random, height, borderMinDepth, borderMaxDepth, borderVariation)[0],
-        createBorderWaves(random, width, borderMinDepth, borderMaxDepth, borderVariation),
-        createBorderWaves(random, width, borderMinDepth, borderMaxDepth, borderVariation)[0]
+        createBorderProfile(random, height, borderDepth, borderGrain),
+        createBorderProfile(random, height, borderDepth, borderGrain),
+        createBorderProfile(random, width, borderDepth, borderGrain),
+        createBorderProfile(random, width, borderDepth, borderGrain)
     ];
     const desert = new Uint8Array(width * height);
 
@@ -259,9 +251,8 @@ export function generateDesert({
             borderTileCount,
             innerTileCount,
             totalDesertTiles: borderTileCount + innerTileCount,
-            borderMinDepth: settings.borderMinDepth,
-            borderMaxDepth: settings.borderMaxDepth,
-            borderVariation: settings.borderVariation,
+            borderDepth: settings.borderDepth,
+            borderGrain: settings.borderGrain,
             waterRadius: settings.waterRadius,
             innerPatchCount: innerResult.patchCount,
             minimumPatchSize: settings.minimumPatchSize
