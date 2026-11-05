@@ -158,6 +158,17 @@ export function openWorldInspector(world) {
         }
     }
 
+    // Diagnostic overlay: orange cliff tiles, purple ramp tiles.
+    if (world.cliffTiles) {
+        for (let i = 0; i < world.cliffTiles.length; i++) {
+            if (!world.cliffTiles[i]) continue;
+            const p = i * 4;
+            image.data[p] = 255;
+            image.data[p + 1] = 112;
+            image.data[p + 2] = 0;
+        }
+    }
+
     if (world.rampTiles) {
         for (let i = 0; i < world.rampTiles.length; i++) {
             if (!world.rampTiles[i]) continue;
@@ -166,6 +177,7 @@ export function openWorldInspector(world) {
             image.data[p + 1] = 65;
             image.data[p + 2] = 185;
         }
+    }
     }
 
     terrainCtx.putImageData(image, 0, 0);
