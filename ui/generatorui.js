@@ -36,6 +36,20 @@ export function initializeGenerator(config) {
             value: config.mountains.minimumDistance,
             min: 0,
             max: 100
+        },
+        {
+            key: "rampSpacing",
+            label: "Minimum distance between ramps",
+            value: 50,
+            min: 30,
+            max: 100
+        },
+        {
+            key: "rampMaxLength",
+            label: "Maximum ramp length",
+            value: 8,
+            min: 2,
+            max: 20
         }
     ];
 
@@ -186,6 +200,8 @@ export function initializeGenerator(config) {
             peakMin: values.peakMin,
             peakMax: values.peakMax,
             minimumDistance: values.minimumDistance,
+            rampSpacing: values.rampSpacing,
+            rampMaxLength: values.rampMaxLength,
             seed: seed
         });
 
